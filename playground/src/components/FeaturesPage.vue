@@ -33,19 +33,23 @@ const { apply, transaction } = useOptimisticUpdate()
 const optimisticStatus = ref<'idle' | 'pending-success' | 'pending-fail' | 'rolled-back' | 'committed'>('idle')
 
 function optimisticSuccess() {
+  // Reset to clean state first
+  entityStore.replace('contact', '1', { contactId: '1', name: 'Alice Chen', role: 'Engineer', status: 'active' })
   optimisticStatus.value = 'pending-success'
-  const rollback = apply('contact', '1', { contactId: '1', name: 'Alicia Chen (optimistic)', role: 'Engineer', status: 'active' })
+  const rollback = apply('contact', '1', { contactId: '1', name: 'Alicia Chen', role: 'Engineer', status: 'active' })
 
   // Simulate server confirming after 1.5s
   setTimeout(() => {
-    entityStore.set('contact', '1', { contactId: '1', name: 'Alicia Chen', role: 'Engineer', status: 'active' })
+    // Server confirms — data matches optimistic, no visible change
     optimisticStatus.value = 'committed'
   }, 1500)
 }
 
 function optimisticFail() {
+  // Reset to clean state first
+  entityStore.replace('contact', '1', { contactId: '1', name: 'Alice Chen', role: 'Engineer', status: 'active' })
   optimisticStatus.value = 'pending-fail'
-  const rollback = apply('contact', '1', { contactId: '1', name: 'FAILED UPDATE (optimistic)', role: 'Engineer', status: 'active' })
+  const rollback = apply('contact', '1', { contactId: '1', name: 'Alicia Chen', role: 'Engineer', status: 'active' })
 
   // Simulate server rejecting after 1.5s
   setTimeout(() => {
@@ -55,7 +59,7 @@ function optimisticFail() {
 }
 
 function resetOptimistic() {
-  entityStore.set('contact', '1', { contactId: '1', name: 'Alice Chen', role: 'Engineer', status: 'active' })
+  entityStore.replace('contact', '1', { contactId: '1', name: 'Alice Chen', role: 'Engineer', status: 'active' })
   optimisticStatus.value = 'idle'
 }
 
@@ -161,8 +165,8 @@ function toggleStatus() {
       <div class="feature-demo">
         <div class="entity-display">
           <span class="label">Alice's name:</span>
-          <span :class="['value', { optimistic: optimisticStatus.startsWith('pending') }]">{{ aliceName }}</span>
-          <span v-if="optimisticStatus.startsWith('pending')" class="badge pending">pending...</span>
+          <span class="value">{{ aliceName }}</span>
+          <span v-if="optimisticStatus.startsWith('pending')" class="badge pending">pending</span>
           <span v-else-if="optimisticStatus === 'committed'" class="badge success">committed</span>
           <span v-else-if="optimisticStatus === 'rolled-back'" class="badge danger">rolled back</span>
         </div>
@@ -363,10 +367,6 @@ function toggleStatus() {
   font-size: 14px;
   font-weight: 500;
   font-family: monospace;
-}
-
-.value.optimistic {
-  color: var(--warning);
 }
 
 .value.muted {

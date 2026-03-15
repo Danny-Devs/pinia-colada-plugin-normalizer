@@ -21,24 +21,21 @@ function toggleTheme() {
     <div class="header-left">
       <h1 class="header-title">pinia-colada-plugin-normalizer</h1>
       <nav class="header-nav">
-        <button
-          :class="['nav-btn', { active: currentPage === 'demo' }]"
-          @click="emit('navigate', 'demo')"
-        >
-          Demo
-        </button>
-        <button
-          :class="['nav-btn', { active: currentPage === 'features' }]"
-          @click="emit('navigate', 'features')"
-        >
-          Features
-        </button>
-        <button
-          :class="['nav-btn', { active: currentPage === 'stress' }]"
-          @click="emit('navigate', 'stress')"
-        >
-          Stress Test
-        </button>
+        <a
+          :class="['nav-link', { active: currentPage === 'demo' }]"
+          @click.prevent="emit('navigate', 'demo')"
+          href="#"
+        >Demo</a>
+        <a
+          :class="['nav-link', { active: currentPage === 'features' }]"
+          @click.prevent="emit('navigate', 'features')"
+          href="#"
+        >Features</a>
+        <a
+          :class="['nav-link', { active: currentPage === 'stress' }]"
+          @click.prevent="emit('navigate', 'stress')"
+          href="#"
+        >Stress Test</a>
       </nav>
     </div>
     <div class="header-right">
@@ -84,33 +81,28 @@ function toggleTheme() {
 
 .header-nav {
   display: flex;
-  gap: 2px;
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 2px;
+  gap: 20px;
 }
 
-.nav-btn {
-  padding: 5px 14px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 13px;
+.nav-link {
+  font-size: 14px;
   font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: none;
   cursor: pointer;
+  padding-bottom: 2px;
+  border-bottom: 2px solid transparent;
   transition: all 0.15s;
 }
 
-.nav-btn:hover {
+.nav-link:hover {
   color: var(--text);
-  background: var(--surface-hover);
 }
 
-.nav-btn.active {
-  background: var(--accent);
-  color: #fff;
+.nav-link.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
 }
 
 .header-right {
