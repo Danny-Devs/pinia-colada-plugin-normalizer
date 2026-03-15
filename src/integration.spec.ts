@@ -36,7 +36,7 @@ describe('Plugin Integration', () => {
    */
   function factory(
     queryFn: () => Promise<unknown>,
-    queryKey: unknown[],
+    queryKey: string[],
     pluginOptions: Parameters<typeof PiniaColadaNormalizer>[0] = {},
     queryOptions: Record<string, unknown> = {},
   ) {
@@ -75,9 +75,9 @@ describe('Plugin Integration', () => {
    */
   function dualFactory(
     queryFn1: () => Promise<unknown>,
-    queryKey1: unknown[],
+    queryKey1: string[],
     queryFn2: () => Promise<unknown>,
-    queryKey2: unknown[],
+    queryKey2: string[],
     pluginOptions: Parameters<typeof PiniaColadaNormalizer>[0] = {},
   ) {
     const pinia = createPinia()

@@ -170,7 +170,7 @@ export function createEntityStore(): EntityStore {
   // ── EntityStore implementation ──────────────
 
   const store: EntityStore = {
-    set(entityType, id, data) {
+    set(entityType: string, id: string, data: EntityRecord) {
       const typeMap = getTypeMap(entityType)
       const existing = typeMap.get(id)
       const previousData = existing?.value
@@ -208,7 +208,7 @@ export function createEntityStore(): EntityStore {
       })
     },
 
-    replace(entityType, id, data) {
+    replace(entityType: string, id: string, data: EntityRecord) {
       const typeMap = getTypeMap(entityType)
       const existing = typeMap.get(id)
       const previousData = existing?.value
@@ -294,7 +294,7 @@ export function createEntityStore(): EntityStore {
       })
     },
 
-    get(entityType, id) {
+    get(entityType: string, id: string) {
       const typeMap = getTypeMap(entityType)
       let ref = typeMap.get(id)
       if (!ref) {
@@ -306,7 +306,7 @@ export function createEntityStore(): EntityStore {
       return ref as ShallowRef<EntityRecord | undefined>
     },
 
-    getByType(entityType) {
+    getByType(entityType: string) {
       const typeMap = getTypeMap(entityType)
       const version = getTypeVersion(entityType)
 
@@ -341,7 +341,7 @@ export function createEntityStore(): EntityStore {
       return ref != null && ref.value !== undefined
     },
 
-    subscribe(listener, filter) {
+    subscribe(listener: (event: EntityEvent) => void, filter?: { entityType?: string }) {
       const entry = { fn: listener, filter }
       listeners.add(entry)
       return () => { listeners.delete(entry) }
