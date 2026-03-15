@@ -54,7 +54,7 @@ function activateDiana() {
     <!-- Demo page -->
     <template v-if="currentPage === 'demo'">
       <p class="tagline">
-        Update an entity once, and every query that references it reflects the change automatically. No <code>invalidateQueries()</code>. No stale data. No forgotten cache entries.
+        Update an entity once, and every query that references it reflects the change automatically. No <code>invalidateQueries()</code>. No stale data. No manual cache updates.
       </p>
 
       <!-- Control strip -->
