@@ -5,7 +5,7 @@ Normalized entity caching plugin for [Pinia Colada](https://github.com/posva/pin
 Store each entity **once**. Update it in one place, every query sees the change. No more stale data from missed cache invalidations.
 
 - **Transparent** — uses Vue's `customRef` to intercept reads/writes. Your app code doesn't know normalization exists.
-- **Minimal** — ~1,700 LOC, zero runtime dependencies. Just Vue + Pinia Colada.
+- **Minimal** — ~1,900 LOC, zero runtime dependencies. Just Vue + Pinia Colada.
 - **Type-safe** — optional `EntityRegistry` for end-to-end typed entity access across the entire API.
 - **Extensible** — swappable `EntityStore` interface for custom backends (IndexedDB, SQLite+WASM).
 
@@ -243,12 +243,13 @@ Batch items and flush after a delay. Framework-agnostic.
 | `setMany(entities)` | Batch write |
 | `remove(type, id)` | Remove entity |
 | `get(type, id)` | Reactive ref (typed when registry used) |
-| `getByType(type)` | Computed array (typed when registry used) |
+| `getByType(type)` | Reactive computed array (typed when registry used) |
+| `getEntriesByType(type)` | Non-reactive snapshot of `{id, data}` pairs |
 | `has(type, id)` | Check existence |
 | `subscribe(listener, filter?)` | Entity change events (typed when registry used) |
 | `retain(type, id)` / `release(type, id)` | Reference counting for GC |
 | `gc()` | Collect unreferenced entities |
-| `toJSON()` / `hydrate(snapshot)` | Serialization / SSR hydration |
+| `toJSON()` / `hydrate(snapshot)` | Serialization / SSR hydration (handles nested EntityRefs) |
 | `clear()` | Remove all entities |
 
 ## How It Works
@@ -257,7 +258,7 @@ Uses Vue's `customRef` to transparently intercept reads and writes on `entry.sta
 
 1. **On write:** When Pinia Colada sets query state, the customRef **setter** extracts entities, stores them in the entity store, and saves references internally
 2. **On read:** When components access query data, the customRef **getter** replaces references with live reactive entity data
-3. **On entity update:** `entityStore.set()` writes directly — Vue reactivity propagates to all queries referencing that entity
+3. **On entity change:** `entityStore.set()` or `remove()` writes directly — Vue reactivity propagates to all queries referencing that entity. Entities that arrive late (out-of-order) or are removed and re-added trigger re-renders automatically.
 
 Follows the [delay plugin](https://github.com/posva/pinia-colada/tree/main/plugins/delay)'s pattern of replacing entry properties with `customRef` during the `extend` hook. SSR-safe via `defineStore` scoping.
 
