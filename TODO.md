@@ -3,6 +3,9 @@
 ## NEXT ACTION
 - [ ] Write integration tests (actual Pinia Colada plugin + useQuery round-trip)
 - [ ] Denormalize caching / structural sharing (avoid new objects every read)
+- [x] **Fix denorm cache invalidation** — per-entity dependency tracking via denormCache keys, only invalidates affected queries
+- [x] **Equality check before merge** — `set()`/`setMany()` skip merge when incoming fields are identical, preserving referential identity
+- [x] **Reference identity short-circuit** — customRef setter skips normalization when `incoming === rawState`
 - [ ] Post update in Discussion #531 with working customRef approach
 - [ ] Remove dead `fromQueries` and `merge` fields from EntityDefinition (or implement them)
 
@@ -31,17 +34,23 @@
 - [ ] Denormalize caching / structural sharing
 - [ ] Post update in Discussion #531
 
+## Phase 1.5: Competitive Parity (from competitor analysis, March 2026)
+- [x] **Entity GC** — `retain()`/`release()`/`gc()` reference counting. Query-extracted entities are tracked; direct writes (WebSocket) are immune. Plugin auto-retains on normalize, auto-releases on entry removal.
+- [x] **Per-type custom merge policies** — optional `merge` function on `EntityDefinition`. Applied during normalization. Default shallow merge unchanged. Enables pagination (array append), counters, deep nested objects.
+- [x] **Array operations** — `updateQueryData(key, updater)` for explicit list modifications. `removeEntityFromAllQueries(type, id)` for automatic removal from all queries + entity store. Works through customRef pipeline.
+- [x] **Document mutation-driven updates** — added zero-refetch pattern to SPEC.md and README.md. `entityStore.set()` in `onSuccess` → all queries update via reactivity.
+
 ## Phase 2: Real-Time
-- [ ] WebSocket adapter hooks (onEntityAdded, onEntityUpdated, onEntityRemoved)
-- [ ] Optimistic update primitives (three-layer sync)
-- [ ] Coalescing support (WS notification → batch REST refetch)
-- [ ] Review Danny's Gallatin three-way sync code for reference
+- [x] WebSocket adapter hooks — `onEntityAdded`, `onEntityUpdated`, `onEntityRemoved` composables
+- [x] **Optimistic updates** — `useOptimisticUpdate` with transaction-based "clear and replay" rollback (inspired by TanStack DB). Supports concurrent transactions on same entity with independent rollback. `apply()` for simple single-mutation, `transaction()` for multi-mutation batches.
+- [x] **Coalescing** — `createCoalescer` utility. Batches WS notifications with configurable delay, flushes as single batch for REST refetch.
+- [ ] Review Danny's Gallatin three-way sync code for reference (BLOCKED — on work laptop)
 
 ## Phase 3: Performance & DX
-- [ ] Helper utilities (selectEntities, filtered views)
-- [ ] Manual index support (createIndex)
-- [ ] Devtools integration
-- [ ] TypeScript type inference for entity schemas
+- [x] **Entity queries** — `useEntityQuery(type, filterFn)` composable for filtered reactive entity views
+- [x] **Manual index support** — `createEntityIndex(type, field)` for O(1) lookups by field value. Auto-updates on entity changes. `dispose()` for cleanup.
+- [ ] Devtools integration — entity store visible via Pinia devtools since we use `defineStore`. Full custom panel deferred to Phase 5.
+- [ ] TypeScript type inference for entity schemas — generic `defineEntity<T>()` deferred to Phase 5.
 
 ## Phase 4: Persistence & Scale
 - [ ] Swappable persistence backends via EntityStore interface

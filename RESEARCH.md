@@ -156,6 +156,108 @@ Each entry in the `_pc_query` Pinia store contains:
 - Leverages Vue's built-in reactivity (no custom engine needed)
 - Follows Pinia Colada v1.0.0 plugin patterns exactly
 
+## Deep Competitor Architecture Analysis (March 2026)
+
+Code-level comparison against source. ~1,100 LOC (ours) vs competitors.
+
+### Architecture Comparison Table
+
+| Dimension | **Ours** | **normy** | **TanStack DB** | **Apollo InMemoryCache** |
+|---|---|---|---|---|
+| **Storage** | `Map<string, Map<string, ShallowRef>>` (type → id → ref) | Flat `objects` dict keyed by `@@key` strings | `SortedMap` + optimistic `Map` overlay | Plain `{ [dataId]: StoreObject }` with Layer chain |
+| **Identity** | `${type}:${id}`, auto from `__typename` or `defineEntity()` | User-provided `getNormalizationObjectKey()` | Explicit per-collection key field | `__typename` + `keyFields` via `typePolicies` |
+| **Updates** | Shallow merge (`set`) or full overwrite (`replace`), batch via `setMany` | Deep merge on every normalize, no replace option | `partial` (Object.assign) or `full` per collection | `DeepMerger` + field-level `modify()` + `DELETE`/`INVALIDATE` modifiers |
+| **Reactivity** | Vue `shallowRef` per entity + `computed` | **None** — framework-agnostic, adapter calls `setQueryData` | Custom event emitter + subscriptions | `optimism` dependency tracking, per-field dirty flags |
+| **Read Path** | Denormalize on read (customRef getter), structural sharing | Denormalize on demand, recursive walk, no caching | Direct reads from 3-layer overlay (no normalization) | Memoized `executeSelectionSet`, cached via `optimism` |
+| **Bundle** | ~1,100 LOC, 0 runtime deps | ~600 LOC, 0 deps | ~2,000+ LOC | ~1,400+ LOC core, 3 deps (`@wry/*`, `optimism`) |
+| **GC** | None (entities outlive queries) | `removeQuery()` cleans deps | `cleanup()` per collection | Full reachability GC, `retain()`/`release()`, `evict()` |
+
+### normy Deep Dive
+
+**Storage**: Flat `objects` dictionary keyed by `@@{objectKey}` strings. Queries stored separately with normalized data, dependency lists, and `usedKeys` maps. Plain JS objects — no reactivity.
+
+**Identity**: Entirely via user-provided `getNormalizationObjectKey()` callback. No auto-detection, no `__typename` convention. Simpler but less ergonomic than our approach.
+
+**Updates**: Every `setQuery()` re-normalizes the entire query data and deep-merges into the objects store. `getQueriesToUpdate()` normalizes mutation data, diffs against stored objects, finds dependent queries, denormalizes them, returns updated data. The library doesn't write to any cache — it returns data and expects the adapter to call `setQueryData()`.
+
+**What they have that we don't**:
+- **Mutation-driven query updates** — `getQueriesToUpdate()` auto-finds and updates all queries affected by a mutation response. We have `invalidateEntity()` but it refetches rather than updating in-place.
+- **Array operations** — `applyArrayOperations()` handles insertions/removals on mutation (e.g., "add this item to the list query"). We have nothing for this.
+- **`usedKeys` tracking** — tracks which fields each query uses, preventing field bleed between queries.
+- **`structuralSharing` short-circuit** — skips re-normalization if `data === previousData` (same reference).
+- **`getQueryFragment` / `getObjectById`** — read individual entities from the normalized store without a query context.
+
+**Our advantages over normy**:
+- Built-in Vue reactivity (their adapter has to manually pipe changes through `setQueryData`)
+- Structural sharing on denormalize (same entity ref = same output = no re-render)
+- Entity event subscriptions (`subscribe()`)
+- Batch writes (`setMany()`)
+- Swappable storage backend (EntityStore interface)
+- SSR safety (per-Pinia scoping vs. singleton state)
+- Symbol-based refs (their `@@` prefix is a fragile string convention)
+
+### TanStack DB Deep Dive
+
+**Storage**: `SortedMap<TKey, TOutput>` for synced data + `Map` for optimistic upserts + `Set` for optimistic deletes. Three-layer overlay: synced base → optimistic deletes filter → optimistic upserts overlay. Reads check all three.
+
+**Not a normalizer** — TanStack DB is a client-side reactive database. Each "collection" is independent. Cross-collection relationships are handled via joins at the IVM (Incremental View Maintenance) query layer, not via normalization.
+
+**What they have that we don't**:
+- **Optimistic mutation transactions** — first-class `Transaction` objects with states (pending → persisting → completed/failed), automatic rollback, per-mutation replay.
+- **IVM dataflow graph** — dedicated `db-ivm` package with operators (filter, join, map, reduce, groupBy, orderBy, topK). Incremental updates flow through without re-querying.
+- **Indexes** — auto, B-tree, lazy, reverse. We have none.
+- **Sync protocol** — built-in sync with server, including truncate/rebuild, change cursors, conflict resolution.
+- **Schema validation** — Standard Schema V1 integration.
+
+**Our advantages over TanStack DB**:
+- Automatic normalization from arbitrary nested API responses (they require explicit collection modeling)
+- Cross-entity deduplication (same entity from two queries shares one store entry)
+- Zero config for standard APIs (`__typename` + `id` auto-detection)
+- Transparent integration (customRef is invisible to app code; TanStack DB requires rearchitecting your data layer)
+
+### Apollo InMemoryCache Deep Dive
+
+**Storage**: Flat `NormalizedCacheObject` (plain object `{ [dataId]: StoreObject }`). References use `{ __ref: "TypeName:id" }`. Layered architecture: `Root` → `Stump` → `Layer` for optimistic updates. Each layer overrides fields from below.
+
+**Identity**: `__typename` + `keyFields` via `typePolicies`. Highly configurable with custom `keyFields` functions. Gold standard for GraphQL identity.
+
+**Updates**: `DeepMerger` with `storeObjectReconciler` that preserves referential identity when values are deeply equal. `modify()` enables surgical field-level patches with `DELETE`, `INVALIDATE`, `readField`, `toReference` helpers.
+
+**What they have that we don't**:
+- **Per-field dependency tracking** — via `optimism`, changing `user.name` only invalidates queries that read `user.name`, not queries reading `user.email`. Our denorm cache clears entirely on any entity change.
+- **Optimistic layers** — `Layer` chain allows stacking optimistic updates with clean rollback.
+- **Garbage collection** — full reachability-based GC with `retain()`/`release()` reference counting.
+- **Per-type-per-field merge functions** — `typePolicies` can define merge per type per field. Critical for pagination (appending arrays), nested objects, custom logic.
+- **`modify()` / `evict()`** — surgical cache manipulation and removal.
+- **Deep equality preservation** — `storeObjectReconciler` keeps existing references when deeply equal, preventing re-renders without explicit structural sharing.
+
+**Our advantages over Apollo**:
+- Framework-native reactivity (Vue shallowRef/computed vs. custom `optimism` system)
+- REST/non-GraphQL support (any JSON API)
+- Simplicity (~1,100 LOC vs. ~5,000+ for full Apollo cache)
+- Swappable storage backend (clean EntityStore interface)
+- Transparent integration (no query language, no selection sets, no schema definitions)
+
+### Techniques Worth Adopting
+
+1. **From Apollo: Equality check before merge** — Their reconciler checks `equal(existing, incoming)` and returns `existing` if equal, preserving referential identity. Our `{...existing, ...data}` always creates a new object. Cheap fix: compare before spreading.
+
+2. **From Apollo: Per-entity dependency tracking on denorm** — Track which entity keys each query's denorm cache reads (a `Set<string>` per query). Only clear caches for queries that reference the changed entity. Single biggest perf win available (~50 LOC change).
+
+3. **From normy: Reference identity short-circuit** — Skip normalization if `data === previousData`. Trivial fast path in our customRef setter.
+
+4. **From TanStack DB: Optimistic overlay pattern** — Three-layer read (synced → deletes → optimistic) is cleaner than Apollo's Layer chain. Adaptable for our entity store as a composable layer.
+
+5. **From Apollo: `retain()`/`release()` for GC** — Simple reference counting. When a query entry is created, retain its entity keys. When removed, release. GC collects entities with zero retainers.
+
+### Anti-Patterns to Avoid
+
+1. **Apollo's complexity spiral** — 5,000+ LOC, 3 runtime deps, Layer/Stump/Root hierarchy. Our simplicity is a feature. Don't chase their feature set at the cost of bundle size.
+2. **Normy's `@@` string prefix** — Fragile magic string convention. Our Symbol-based `ENTITY_REF_MARKER` is strictly superior.
+3. **Normy's full re-normalization on every setQuery** — O(n) in response size for every query update. Our normalize-in-setter / denormalize-in-getter amortizes this.
+4. **TanStack DB's monolithic state manager** — 600+ LOC with entangled sync/optimistic/transaction logic. If we add optimistic updates, keep them as a separate composable layer.
+5. **Apollo's GraphQL coupling** — Write path inseparable from selection sets and fragment resolution. Our framework-agnostic normalization is more reusable.
+
 ## Browser Persistence Landscape
 
 ### IndexedDB + Dexie

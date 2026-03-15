@@ -1,8 +1,13 @@
 # pinia-colada-plugin-normalizer
 
-Normalized entity caching plugin for [Pinia Colada](https://github.com/posva/pinia-colada).
+Normalized entity caching plugin for [Pinia Colada](https://github.com/posva/pinia-colada). Apollo-style normalization with zero configuration and Vue-native performance.
 
 Store each entity **once**. Update it in one place, every query sees the change. No more stale data from missed cache invalidations.
+
+- **Transparent** — uses Vue's `customRef` to intercept reads/writes. Your app code doesn't know normalization exists.
+- **Minimal** — ~1,100 LOC, zero runtime dependencies. Just Vue + Pinia Colada.
+- **WebSocket-first** — write directly to the entity store from push events, all views update automatically.
+- **Extensible** — swappable `EntityStore` interface for custom backends (IndexedDB, SQLite+WASM).
 
 ## The Problem
 
@@ -62,6 +67,20 @@ ws.on('CONTACT_UPDATED', (data) => {
 })
 ```
 
+## Mutation Updates (Zero Refetch)
+
+When a mutation returns the updated entity, write it directly — all queries update automatically:
+
+```typescript
+const { mutate } = useMutation({
+  mutation: (data) => api.updateContact(data),
+  onSuccess: (response) => {
+    entityStore.set('contact', response.contactId, response)
+    // All queries referencing this contact update instantly. No refetch.
+  },
+})
+```
+
 ## Installation
 
 ```bash
@@ -106,6 +125,72 @@ The storage backend is swappable. Default is an in-memory reactive Map. The inte
 - `query(fn)` — derived reactive query
 - `subscribe(listener, filter?)` — entity change events
 - `toJSON()` / `hydrate(snapshot)` — serialization
+
+## Optimistic Updates
+
+Instant UI updates with transaction-based rollback. Handles concurrent mutations correctly:
+
+```typescript
+import { useOptimisticUpdate } from 'pinia-colada-plugin-normalizer'
+
+const { apply, transaction } = useOptimisticUpdate()
+
+// Simple (single mutation):
+const { mutate } = useMutation({
+  mutation: (data) => api.updateContact(data),
+  onMutate: (data) => apply('contact', data.contactId, data),
+  onError: (_err, _vars, rollback) => rollback?.(),
+})
+
+// Multi-mutation transaction:
+const tx = transaction()
+tx.set('contact', '1', { name: 'Alicia' })
+tx.set('order', '5', { status: 'confirmed' })
+// On success: tx.commit()
+// On failure: tx.rollback() — restores server truth, replays other active transactions
+```
+
+## Real-Time Hooks
+
+Fine-grained entity lifecycle events:
+
+```typescript
+import { onEntityAdded, onEntityUpdated, onEntityRemoved } from 'pinia-colada-plugin-normalizer'
+
+onEntityAdded('contact', (event) => toast.success(`${event.data.name} joined!`))
+onEntityUpdated('contact', (event) => console.log('Updated:', event.id))
+onEntityRemoved('contact', (event) => toast.info(`${event.previousData?.name} left`))
+```
+
+## Entity Queries & Indexes
+
+Filtered reactive views and O(1) field lookups:
+
+```typescript
+import { useEntityQuery, createEntityIndex } from 'pinia-colada-plugin-normalizer'
+
+// Filtered view (reactive, updates automatically)
+const activeContacts = useEntityQuery('contact', c => c.status === 'active')
+
+// Index for O(1) lookups by field value
+const statusIndex = createEntityIndex('contact', 'status')
+const active = statusIndex.get('active')   // ComputedRef<EntityRecord[]>
+```
+
+## Array Operations (List Query Updates)
+
+Add or remove entities from list queries after create/delete mutations:
+
+```typescript
+import { updateQueryData, removeEntityFromAllQueries } from 'pinia-colada-plugin-normalizer'
+
+// Add to a specific list query:
+entityStore.set('contact', '99', newContact)
+updateQueryData(['contacts'], (data) => [...(data as any[]), newContact])
+
+// Remove from ALL queries + entity store (one call does everything):
+removeEntityFromAllQueries('contact', '42')
+```
 
 ## How It Works
 

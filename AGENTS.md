@@ -7,8 +7,9 @@ A normalized entity caching plugin for Pinia Colada (Vue's data-fetching library
 ## Architecture
 
 - `src/types.ts` — EntityStore interface (swappable contract), defineEntity, module augmentation
-- `src/store.ts` — In-memory EntityStore implementation (ShallowRef per entity, reactive Map)
+- `src/store.ts` — In-memory EntityStore implementation (ShallowRef per entity, reactive Map, GC via retain/release)
 - `src/plugin.ts` — Pinia Colada plugin (customRef replacement of `entry.state`), normalize/denormalize engines, useEntityStore composable (SSR-safe via defineStore)
+- `src/composables.ts` — Real-time composables (WS hooks, optimistic updates, coalescer, entity queries, indexes)
 - `src/index.ts` — Public API barrel export
 
 ### Core pattern: customRef replacement
@@ -40,14 +41,42 @@ pnpm test        # run tests once
 pnpm test:watch  # watch mode
 ```
 
-43 tests covering normalize/denormalize engine + EntityStore.
-Integration tests (actual Pinia Colada round-trip) are TODO.
+83 tests across 4 test files covering:
+- Normalize/denormalize engine (22 tests)
+- EntityStore + GC (32 tests)
+- Plugin integration + composables (21 tests)
+- Composables standalone (8 tests)
 
 ## Build
 
 ```bash
 pnpm build       # outputs to dist/
 ```
+
+## Competitive context
+
+Positioning: **Apollo-style normalization with zero configuration and Vue-native performance.**
+
+Key competitors analyzed (deep code-level comparison in `RESEARCH.md`):
+- **normy** — pure normalize/denormalize engine, no reactivity, `@@key` string refs (fragile)
+- **TanStack DB** — client-side reactive database, not a normalizer. Overkill for most apps.
+- **Apollo InMemoryCache** — GraphQL-coupled, per-field dependency tracking, ~5,000+ LOC
+
+Our core differentiators: transparent customRef integration, Vue-native reactivity, ~1,100 LOC / 0 deps, swappable EntityStore interface, zero-config for standard APIs.
+
+Resolved gaps (March 2026):
+- Per-entity denorm cache invalidation (was: clears ALL on ANY change)
+- Entity GC via retain/release/gc (was: entities live forever)
+- Custom merge policies via `defineEntity({ merge })` (was: shallow merge only)
+- Equality check before merge + reference short-circuit (perf)
+
+All competitive gaps from March 2026 analysis have been addressed.
+See `SPEC.md` § "Competitive Gaps" for the full resolved list.
+
+Anti-patterns to avoid (from competitors):
+- Apollo's complexity spiral (don't chase features at cost of simplicity)
+- Normy's `@@` string prefix (our Symbol approach is superior)
+- TanStack DB's monolithic state manager (keep optimistic updates as composable layer)
 
 ## Important: do NOT
 
@@ -58,3 +87,5 @@ pnpm build       # outputs to dist/
 - Use module-level singletons for state (breaks SSR)
 - Write to `entry.state.value` in `after()` callbacks (bypasses action system)
 - Build another plugin that replaces `entry.state` — only one plugin can own it (we do)
+- Chase Apollo's feature set at the cost of bundle size/simplicity
+- Embed optimistic update logic into the entity store (keep it as a composable layer)

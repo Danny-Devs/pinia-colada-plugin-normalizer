@@ -211,35 +211,118 @@ The plugin doesn't care where data comes from:
 
 ## Comparisons
 
+> Deep code-level analysis in `RESEARCH.md` § "Deep Competitor Architecture Analysis". Summary below.
+
 ### vs normy (@normy/vue-query)
 
 | | normy | pinia-colada-plugin-normalizer |
 |---|---|---|
 | Normalization | Convention only (`id` field) | Convention + `defineEntity` escape hatch |
 | Control | Auto-normalize everything | Opt-in per query or globally |
-| Storage | Inside query cache | Separate entity store (swappable backend) |
+| Storage | Flat `objects` dict (inside query cache) | Separate entity store (swappable backend, ShallowRef per entity) |
+| Reactivity | None — adapter pipes data via `setQueryData` | Vue-native ShallowRef per entity + computed |
 | WebSocket | Not designed for push | First-class via `useEntityStore()` |
+| Entity refs | `@@key` string prefix (fragile) | `Symbol('pinia-colada-entity-ref')` (collision-proof) |
+| Denorm caching | None (re-walks on every read) | Structural sharing (same ref = same output) |
 | Offline | No | Roadmap (IndexedDB / SQLite) |
-| Pinia Colada | Not integrated | Native plugin following v1.0.0 patterns |
+| They have, we don't | Mutation-driven query updates (`getQueriesToUpdate`), array operations (`applyArrayOperations`), `usedKeys` field tracking | — |
+| We have, they don't | — | Vue reactivity, entity subscriptions, batch writes, SSR safety, swappable backends |
 
 ### vs Apollo normalized cache
 
 | | Apollo | pinia-colada-plugin-normalizer |
 |---|---|---|
 | Schema | Requires GraphQL schema | Convention-based, no schema needed |
-| Merge strategy | Per-field merge functions (complex) | Shallow merge (simple, preserves enriched fields) |
+| Merge strategy | Per-type-per-field merge functions via `typePolicies` (powerful but complex) | Shallow merge (simple, preserves enriched fields) |
 | Flexibility | All-or-nothing normalization | Hybrid: normalize entities, leave hierarchies |
+| Reactivity | Custom `optimism` library (per-field dirty tracking) | Vue-native ShallowRef/computed |
 | Transport | GraphQL only | Any (REST, GraphQL, RPC, WebSocket, SSE) |
-| Bundle | ~30kb+ | Core ~2-5kb (estimated) |
+| GC | Full reachability GC + `retain()`/`release()` | None (entities outlive queries) |
+| Optimistic | Layer chain with clean rollback | Not yet implemented |
+| Bundle | ~5,000+ LOC, 3 runtime deps | ~1,100 LOC, 0 runtime deps |
+| They have, we don't | Per-field dependency tracking, GC, optimistic layers, `modify()`/`evict()`, deep equality preservation | — |
+| We have, they don't | — | REST support, swappable backends, transparent integration (no query language), simplicity |
 
-### vs TanStack Query + TanStack DB
+### vs TanStack DB
 
-| | TanStack ecosystem | Our approach |
+| | TanStack DB | Our approach |
 |---|---|---|
-| Reactivity | Custom-built (React lacks fine-grained) | Vue's built-in (free, battle-tested) |
-| Conceptual surface | Large (query + store + reactivity engine) | Small (query + normalize + Vue computed) |
-| LOC | ~25K combined | ~6K estimated (leveraging Vue) |
-| Query planner | Built-in | Roadmap via SQLite WASM |
+| Model | Client-side reactive database (collections, not normalization) | Normalizing cache plugin (automatic entity extraction) |
+| Reactivity | Custom event emitter + subscriptions | Vue's built-in (free, battle-tested) |
+| Config | Explicit collection definitions required | Zero-config for standard APIs |
+| Conceptual surface | Large (collections + IVM + sync + transactions) | Small (query + normalize + Vue computed) |
+| LOC | ~2,000+ core | ~1,100 total |
+| Query planner | IVM dataflow graph (filter, join, orderBy, groupBy, topK) | Roadmap via SQLite WASM |
+| Optimistic | First-class transactions with rollback | Not yet implemented |
+| They have, we don't | IVM, indexes, sync protocol, optimistic transactions, schema validation | — |
+| We have, they don't | — | Automatic normalization, cross-entity dedup, zero-config, transparent integration |
+
+## Competitive Positioning
+
+**Tagline**: Apollo-style normalization with zero configuration and Vue-native performance.
+
+**Core differentiators** (emphasize in Discussion #531 and README):
+1. **Transparent integration via customRef** — app code doesn't know normalization exists. No other normalizer hooks into the query cache at the reactive primitive level.
+2. **Vue-native reactivity** — ShallowRef per entity = zero-overhead fine-grained reactivity. No custom reactivity engine.
+3. **Minimal bundle** — ~1,100 LOC, zero runtime dependencies. Smallest of all competitors.
+4. **Swappable storage backend** — EntityStore interface enables future IndexedDB/SQLite backends. Nobody else has this.
+5. **Zero-config for standard APIs** — `__typename` + `id` auto-detection with `defineEntity()` escape hatch.
+
+## Competitive Gaps (Prioritized)
+
+### Resolved
+
+1. ~~**Denorm cache invalidation is too coarse**~~ **RESOLVED**: Per-entity dependency tracking via denormCache keys. Only invalidates queries that reference the changed entity.
+
+2. ~~**No GC / entity eviction**~~ **RESOLVED**: `retain()`/`release()`/`gc()` on EntityStore. Plugin auto-retains on normalize, auto-releases on entry removal. Direct writes (WebSocket) are immune to gc().
+
+3. ~~**No per-type custom merge policies**~~ **RESOLVED**: Optional `merge` function on `EntityDefinition`. Applied during normalization. Default shallow merge unchanged.
+
+5. ~~**No mutation-driven query updates**~~ **RESOLVED**: Documented zero-refetch pattern in SPEC.md § "Mutation-Driven Updates" and README.md. `entityStore.set()` in mutation `onSuccess` → all queries update via reactivity.
+
+7. ~~**Equality check before merge**~~ **RESOLVED**: `set()`/`setMany()` skip merge when incoming fields are identical, preserving referential identity.
+
+8. ~~**Reference identity short-circuit**~~ **RESOLVED**: customRef setter skips normalization when `incoming === rawState`.
+
+4. ~~**No optimistic update rollback**~~ **RESOLVED**: Transaction-based `useOptimisticUpdate` with "clear and replay" rollback (TanStack DB pattern). Supports concurrent transactions on the same entity with independent rollback. Server truth is snapshotted before first optimistic touch; on rollback, truth is restored and remaining transactions are replayed.
+
+6. ~~**No array operations**~~ **RESOLVED**: `updateQueryData(key, updater)` for explicit list modifications (add, remove, reorder). `removeEntityFromAllQueries(type, id)` for automatic removal from all queries + entity store. Both work through the customRef pipeline — updater receives denormalized data, result is re-normalized automatically.
+
+### Remaining
+
+All competitive gaps from the March 2026 analysis have been addressed.
+
+## Mutation-Driven Updates (Zero-Refetch Pattern)
+
+Our architecture handles mutation-driven query updates automatically — no special API needed.
+
+**The pattern:** When a mutation response contains an updated entity, write it directly to the entity store. All queries that reference that entity update via Vue reactivity. No `invalidateEntity()`, no refetch.
+
+```typescript
+import { useMutation } from '@pinia/colada'
+import { useEntityStore } from 'pinia-colada-plugin-normalizer'
+
+const entityStore = useEntityStore()
+
+const { mutate: updateContact } = useMutation({
+  mutation: (data: { contactId: string; name: string }) =>
+    api.updateContact(data),
+  onSuccess: (response) => {
+    // Write the updated entity directly — all queries update automatically
+    entityStore.set('contact', response.contactId, response)
+    // No invalidateEntity() needed — no server round-trip
+  },
+})
+```
+
+**Why this works:** The entity store is the single source of truth. When you call `entityStore.set()`, Vue's reactivity triggers the customRef getter on all queries that reference that entity. The getter denormalizes with the new data. Components re-render with the update. Zero refetches.
+
+**When to use `invalidateEntity()` instead:**
+- The mutation response does NOT contain the full entity (server just returns `{ ok: true }`)
+- You want to guarantee server-confirmed data (belt-and-suspenders)
+- An entity was deleted and you want dependent queries to refetch and remove it from their results
+
+**Comparison with normy:** normy's `getQueriesToUpdate()` scans all queries, denormalizes mutation data, and returns updated query data for the adapter to write. Our approach is simpler — Vue reactivity does the propagation automatically. No scanning, no manual query updates.
 
 ## Composability with Pinia Colada Plugins
 
