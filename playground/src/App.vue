@@ -248,8 +248,8 @@ body {
 /* Panels */
 .panels {
   display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
-  background: var(--border); margin: 10px 0 0;
-  border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  background: var(--border); margin: 16px 0 20px;
+  border: 2px solid var(--border); border-radius: 10px; overflow: hidden;
 }
 .panel-container { background: var(--surface); min-height: 200px; }
 
