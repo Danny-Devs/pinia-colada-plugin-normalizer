@@ -2,12 +2,19 @@
   "name": "pinia-colada-plugin-normalizer",
   "type": "module",
   "version": "0.1.0",
-  "private": true,
   "description": "Normalized entity caching plugin for Pinia Colada",
   "author": {
     "name": "Danny Devs"
   },
   "license": "MIT",
+  "homepage": "https://github.com/Danny-Devs/pinia-colada-plugin-normalizer",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Danny-Devs/pinia-colada-plugin-normalizer"
+  },
+  "bugs": {
+    "url": "https://github.com/Danny-Devs/pinia-colada-plugin-normalizer/issues"
+  },
   "keywords": [
     "pinia",
     "pinia-colada",
@@ -16,12 +23,27 @@
     "entity",
     "cache",
     "query",
-    "websocket"
+    "real-time"
   ],
   "sideEffects": false,
-  "exports": "./src/index.ts",
-  "main": "./src/index.ts",
+  "exports": "./dist/index.js",
+  "main": "./dist/index.js",
+  "types": "./dist/index-BWoSMq7g.d.ts",
+  "typesVersions": {
+    "*": {
+      "*": [
+        "./dist/*",
+        "./*"
+      ]
+    }
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "dist"
+  ],
   "scripts": {
+    "build": "tsdown",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
@@ -34,8 +56,9 @@
   "devDependencies": {
     "@pinia/colada": "^1.0.0",
     "pinia": "^2.3.0",
-    "vue": "^3.5.0",
+    "tsdown": "^0.12.0",
+    "typescript": "^5.7.0",
     "vitest": "^3.0.0",
-    "typescript": "^5.7.0"
+    "vue": "^3.5.0"
   }
 }
