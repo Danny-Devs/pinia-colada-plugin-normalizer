@@ -5,8 +5,8 @@ Normalized entity caching plugin for [Pinia Colada](https://github.com/posva/pin
 Store each entity **once**. Update it in one place, every query sees the change. No more stale data from missed cache invalidations.
 
 - **Transparent** — uses Vue's `customRef` to intercept reads/writes. Your app code doesn't know normalization exists.
-- **Minimal** — ~1,000 LOC, zero runtime dependencies. Just Vue + Pinia Colada.
-- **WebSocket-first** — write directly to the entity store from push events, all views update automatically.
+- **Minimal** — ~1,700 LOC, zero runtime dependencies. Just Vue + Pinia Colada.
+- **Type-safe** — optional `EntityRegistry` for end-to-end typed entity access across the entire API.
 - **Extensible** — swappable `EntityStore` interface for custom backends (IndexedDB, SQLite+WASM).
 
 ## Installation
@@ -27,8 +27,8 @@ app.use(PiniaColada, {
   plugins: [
     PiniaColadaNormalizer({
       entities: {
-        contact: defineEntity({ idField: 'contactId' }),
-        order: defineEntity({ idField: 'orderId' }),
+        contact: defineEntity<Contact>({ idField: 'contactId' }),
+        order: defineEntity<Order>({ idField: 'orderId' }),
       },
     }),
   ],
@@ -45,6 +45,27 @@ const { data } = useQuery({
 })
 ```
 
+## Type Safety
+
+Augment the `EntityRegistry` interface for end-to-end typed access:
+
+```typescript
+declare module 'pinia-colada-plugin-normalizer' {
+  interface EntityRegistry {
+    contact: Contact
+    order: Order
+  }
+}
+
+// Now fully typed everywhere:
+entityStore.get('contact', '1')           // ShallowRef<Contact | undefined>
+entityStore.set('contact', '1', data)     // data must match Contact
+useEntityQuery('contact', c => c.name)    // c is Contact
+onEntityAdded('contact', e => e.data)     // data is Contact | undefined
+```
+
+Without the registry, everything defaults to `EntityRecord` — fully backwards compatible.
+
 ## The Problem
 
 Pinia Colada stores data per query key. When the same entity appears in multiple queries, it lives as independent copies that can diverge:
@@ -59,26 +80,21 @@ const { data: contact } = useQuery({ key: ['contacts', 5], query: () => fetchCon
 
 With normalization, contact 5 is stored once. Both queries read from the same entity. One write, all views update.
 
-## WebSocket Integration
+## Entity Store Writes
 
-Write directly to the entity store from push events — no invalidation needed:
+Write directly to the entity store — no invalidation needed:
 
 ```typescript
 import { useEntityStore } from 'pinia-colada-plugin-normalizer'
 
 const entityStore = useEntityStore()
 
+// From a WebSocket event:
 ws.on('CONTACT_UPDATED', (data) => {
   entityStore.set('contact', data.contactId, data)
-  // Every query referencing this contact updates automatically
 })
-```
 
-## Mutation Updates (Zero Refetch)
-
-When a mutation returns the updated entity, write it directly — all queries update automatically:
-
-```typescript
+// From a mutation response:
 const { mutate } = useMutation({
   mutation: (data) => api.updateContact(data),
   onSuccess: (response) => {
@@ -90,7 +106,7 @@ const { mutate } = useMutation({
 
 ## Optimistic Updates
 
-Instant UI updates with transaction-based rollback. Handles concurrent mutations correctly:
+Transaction-based with rollback. Handles concurrent mutations correctly:
 
 ```typescript
 import { useOptimisticUpdate } from 'pinia-colada-plugin-normalizer'
@@ -112,75 +128,22 @@ tx.set('order', '5', { status: 'confirmed' })
 // On failure: tx.rollback() — restores server truth, replays other active transactions
 ```
 
-## API
+## Array Operations
 
-### `PiniaColadaNormalizer(options?)`
-
-Creates the plugin. Options:
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `entities` | `Record<string, EntityDefinition>` | `{}` | Entity type configurations |
-| `defaultIdField` | `string` | `'id'` | Default ID field for auto-detection |
-| `store` | `EntityStore` | in-memory | Custom storage backend |
-| `autoNormalize` | `boolean` | `false` | Normalize all queries by default |
-
-### `defineEntity(config)`
-
-Configure an entity type:
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `idField` | `string` | `'id'` | Field containing the entity ID |
-| `getId` | `(entity) => string \| null` | — | Custom ID extraction (for composite keys) |
-| `merge` | `(existing, incoming) => entity` | shallow merge | Custom merge strategy per entity type |
-
-### `useEntityStore(pinia?)`
-
-Access the entity store from components or composables. Accepts an optional Pinia instance for use outside component setup (e.g., WebSocket services).
-
-### `invalidateEntity(entityType, id, pinia?)`
-
-Refetch all active queries that reference the given entity. Use when you know an entity is stale and want to force a server round-trip.
-
-### `updateQueryData(key, updater, pinia?)`
-
-Update a query's data directly, re-normalizing the result. The updater receives denormalized data and should return the new data. Use for array operations (add/remove entities from list queries).
+Add or remove entities from list queries without refetching:
 
 ```typescript
-// Add a new contact to a list query:
+import { updateQueryData, removeEntityFromAllQueries } from 'pinia-colada-plugin-normalizer'
+
+// Add to a specific list query:
 entityStore.set('contact', '99', newContact)
 updateQueryData(['contacts'], (data) => [...(data as any[]), newContact])
-```
 
-### `removeEntityFromAllQueries(entityType, id, pinia?)`
-
-Remove an entity from all normalized queries and the entity store in one call. Complete "delete entity" operation.
-
-```typescript
+// Remove from ALL queries + entity store (one call):
 removeEntityFromAllQueries('contact', '42')
 ```
 
-### Entity Store
-
-The storage backend is swappable. Default is an in-memory reactive Map:
-
-| Method | Description |
-|--------|-------------|
-| `set(type, id, data)` | Shallow-merge entity (`{ ...existing, ...incoming }`) |
-| `replace(type, id, data)` | Full replacement (no merge) |
-| `setMany(entities)` | Batch write (shallow merge) |
-| `remove(type, id)` | Remove an entity |
-| `get(type, id)` | Reactive `ShallowRef<EntityRecord \| undefined>` |
-| `getByType(type)` | `ComputedRef<EntityRecord[]>` |
-| `has(type, id)` | Check existence |
-| `subscribe(listener, filter?)` | Entity change events |
-| `retain(type, id)` / `release(type, id)` | Reference counting for GC |
-| `gc()` | Collect entities with zero references |
-| `toJSON()` / `hydrate(snapshot)` | Serialization / SSR hydration |
-| `clear()` | Remove all entities |
-
-### Real-Time Hooks
+## Real-Time Hooks
 
 Fine-grained entity lifecycle events:
 
@@ -192,7 +155,7 @@ onEntityUpdated('contact', (event) => console.log('Updated:', event.id))
 onEntityRemoved('contact', (event) => toast.info(`${event.previousData?.name} left`))
 ```
 
-### Entity Queries & Indexes
+## Entity Queries & Indexes
 
 Filtered reactive views and O(1) field lookups:
 
@@ -204,18 +167,99 @@ const activeContacts = useEntityQuery('contact', c => c.status === 'active')
 
 // Index for O(1) lookups by field value
 const statusIndex = createEntityIndex('contact', 'status')
-const active = statusIndex.get('active')   // ComputedRef<EntityRecord[]>
+const active = statusIndex.get('active')   // ComputedRef<Contact[]>
 ```
+
+## Coalescing
+
+Batch multiple notifications into a single fetch:
+
+```typescript
+import { createCoalescer } from 'pinia-colada-plugin-normalizer'
+
+const coalescer = createCoalescer(async (entityKeys) => {
+  const entities = await api.fetchEntitiesByIds(entityKeys)
+  for (const entity of entities) {
+    entityStore.set('contact', entity.id, entity)
+  }
+}, 100) // 100ms batching window
+
+ws.on('ENTITY_STALE', ({ key }) => coalescer.add(key))
+```
+
+## API Reference
+
+### `PiniaColadaNormalizer(options?)`
+
+Creates the plugin.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `entities` | `Record<string, EntityDefinition>` | `{}` | Entity type configurations |
+| `defaultIdField` | `string` | `'id'` | Default ID field for auto-detection |
+| `store` | `EntityStore` | in-memory | Custom storage backend |
+| `autoNormalize` | `boolean` | `false` | Normalize all queries by default |
+
+### `defineEntity<T>(config)`
+
+Configure an entity type. The generic `T` provides type safety for callbacks.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `idField` | `string & keyof T` | `'id'` | Field containing the entity ID |
+| `getId` | `(entity: T) => string \| null` | — | Custom ID extraction (for composite keys) |
+| `merge` | `(existing: T, incoming: T) => T` | shallow merge | Custom merge strategy |
+
+### `useEntityStore(pinia?)`
+
+Access the entity store. Returns typed results when `EntityRegistry` is augmented.
+
+### `invalidateEntity(entityType, id, pinia?)`
+
+Refetch all active queries referencing the given entity.
+
+### `updateQueryData(key, updater, pinia?)`
+
+Update a query's data directly. Updater receives denormalized data, result is re-normalized.
+
+### `removeEntityFromAllQueries(entityType, id, pinia?)`
+
+Remove an entity from all normalized queries and the entity store.
+
+### `useOptimisticUpdate(pinia?)`
+
+Returns `{ apply, transaction }` for optimistic updates with rollback.
+
+### `createCoalescer<T>(onFlush, delay?)`
+
+Batch items and flush after a delay. Framework-agnostic.
+
+### Entity Store Interface
+
+| Method | Description |
+|--------|-------------|
+| `set(type, id, data)` | Shallow-merge entity |
+| `replace(type, id, data)` | Full replacement (no merge) |
+| `setMany(entities)` | Batch write |
+| `remove(type, id)` | Remove entity |
+| `get(type, id)` | Reactive ref (typed when registry used) |
+| `getByType(type)` | Computed array (typed when registry used) |
+| `has(type, id)` | Check existence |
+| `subscribe(listener, filter?)` | Entity change events (typed when registry used) |
+| `retain(type, id)` / `release(type, id)` | Reference counting for GC |
+| `gc()` | Collect unreferenced entities |
+| `toJSON()` / `hydrate(snapshot)` | Serialization / SSR hydration |
+| `clear()` | Remove all entities |
 
 ## How It Works
 
-Uses Vue's `customRef` to transparently intercept both reads and writes on `entry.state`:
+Uses Vue's `customRef` to transparently intercept reads and writes on `entry.state`:
 
-1. **On write:** When Pinia Colada sets query state, the customRef **setter** fires — extracts entities (objects matching `defineEntity` configs or with `__typename` + `id`), stores them in the entity store, saves references internally
-2. **On read:** When components access query data, the customRef **getter** fires — replaces references with live reactive entity data from the store
-3. **On entity update:** `entityStore.set()` writes directly — Vue reactivity propagates to all queries that reference that entity
+1. **On write:** When Pinia Colada sets query state, the customRef **setter** extracts entities, stores them in the entity store, and saves references internally
+2. **On read:** When components access query data, the customRef **getter** replaces references with live reactive entity data
+3. **On entity update:** `entityStore.set()` writes directly — Vue reactivity propagates to all queries referencing that entity
 
-This approach follows the [delay plugin](https://github.com/posva/pinia-colada/tree/main/plugins/delay)'s pattern of replacing entry properties with `customRef` during the `extend` hook. SSR-safe via `defineStore` scoping.
+Follows the [delay plugin](https://github.com/posva/pinia-colada/tree/main/plugins/delay)'s pattern of replacing entry properties with `customRef` during the `extend` hook. SSR-safe via `defineStore` scoping.
 
 ## License
 
