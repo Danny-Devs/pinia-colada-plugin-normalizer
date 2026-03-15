@@ -14,6 +14,7 @@ app.use(PiniaColada, {
       entities: {
         contact: defineEntity({ idField: "contactId" }),
       },
+      autoRedirect: true,
     }),
   ],
 });
