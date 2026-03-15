@@ -6,6 +6,7 @@ import ContactDetail from './components/ContactDetail.vue'
 import ContactListRaw from './components/ContactListRaw.vue'
 import ContactDetailRaw from './components/ContactDetailRaw.vue'
 import DataInspector from './components/DataInspector.vue'
+import FeaturesPage from './components/FeaturesPage.vue'
 import StressTestPage from './components/StressTestPage.vue'
 import { useDemo } from './composables/useDemo'
 
@@ -125,6 +126,9 @@ function activateDiana() {
       <!-- Data Inspector -->
       <DataInspector :normalized="normalized" />
     </template>
+
+    <!-- Features page -->
+    <FeaturesPage v-else-if="currentPage === 'features'" />
 
     <!-- Stress test page -->
     <StressTestPage v-else-if="currentPage === 'stress'" />

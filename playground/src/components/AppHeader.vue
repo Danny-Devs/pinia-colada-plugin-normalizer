@@ -28,6 +28,12 @@ function toggleTheme() {
           Demo
         </button>
         <button
+          :class="['nav-btn', { active: currentPage === 'features' }]"
+          @click="emit('navigate', 'features')"
+        >
+          Features
+        </button>
+        <button
           :class="['nav-btn', { active: currentPage === 'stress' }]"
           @click="emit('navigate', 'stress')"
         >
