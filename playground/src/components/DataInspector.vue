@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useEntityStore } from 'pinia-colada-plugin-normalizer'
-import { ENTITY_REF_MARKER } from 'pinia-colada-plugin-normalizer'
 import { useQueryCache } from '@pinia/colada'
 
 const props = defineProps<{ normalized: boolean }>()
@@ -15,7 +14,6 @@ const flashKey = ref<string | null>(null)
 // so the computed snapshot re-evaluates. toJSON() reads raw Maps which
 // aren't tracked by Vue, so we need this manual trigger.
 const storeVersion = ref(0)
-entityStore.subscribe(() => { storeVersion.value++ })
 
 // Entity store snapshot
 const storeSnapshot = computed(() => {
@@ -104,8 +102,9 @@ function countEntities(data: unknown, map: Map<string, number>) {
   }
 }
 
-// Flash on entity updates
+// Single subscription for both version tracking and flash animation
 entityStore.subscribe((event) => {
+  storeVersion.value++
   flashKey.value = event.key
   setTimeout(() => { flashKey.value = null }, 600)
 })
@@ -117,9 +116,6 @@ function formatData(data: unknown): string {
   }, 2)
 }
 
-function truncate(str: string, len: number): string {
-  return str.length > len ? str.slice(0, len) + '...' : str
-}
 </script>
 
 <template>

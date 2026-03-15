@@ -102,7 +102,7 @@ export function createEntityStore(): EntityStore {
         entityType,
         id,
         key: toEntityKey(entityType, id),
-        data,
+        data: existing ? existing.value : data,
         previousData,
       })
     },
@@ -130,7 +130,7 @@ export function createEntityStore(): EntityStore {
           entityType,
           id,
           key: toEntityKey(entityType, id),
-          data,
+          data: existing ? existing.value : data,
           previousData,
         })
       }

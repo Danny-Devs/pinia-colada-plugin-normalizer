@@ -12,12 +12,21 @@ describe('EntityStore (in-memory)', () => {
       expect(ref.value).toEqual({ id: '42', name: 'Alice' })
     })
 
-    it('replaces entity on subsequent set', () => {
+    it('shallow-merges on subsequent set', () => {
       const store = createEntityStore()
       store.set('contact', '42', { id: '42', name: 'Alice' })
       store.set('contact', '42', { id: '42', name: 'Alicia' })
 
       expect(store.get('contact', '42').value).toEqual({ id: '42', name: 'Alicia' })
+    })
+
+    it('preserves existing fields not present in incoming data', () => {
+      const store = createEntityStore()
+      store.set('contact', '42', { id: '42', name: 'Alice', email: 'alice@test.com' })
+      store.set('contact', '42', { id: '42', name: 'Alicia' })
+
+      // email is preserved from the first set
+      expect(store.get('contact', '42').value).toEqual({ id: '42', name: 'Alicia', email: 'alice@test.com' })
     })
 
     it('returns undefined ref for non-existent entity', () => {
@@ -191,6 +200,18 @@ describe('EntityStore (in-memory)', () => {
 
       expect(listener.mock.calls[0][0].previousData).toEqual({ id: '42', name: 'Alice' })
       expect(listener.mock.calls[0][0].data).toEqual({ id: '42', name: 'Alicia' })
+    })
+
+    it('emits merged data (not just incoming) on updates', () => {
+      const store = createEntityStore()
+      store.set('contact', '42', { id: '42', name: 'Alice', email: 'alice@test.com' })
+
+      const listener = vi.fn()
+      store.subscribe(listener)
+      store.set('contact', '42', { id: '42', name: 'Alicia' })
+
+      // event.data should be the merged result, not just the incoming partial
+      expect(listener.mock.calls[0][0].data).toEqual({ id: '42', name: 'Alicia', email: 'alice@test.com' })
     })
   })
 

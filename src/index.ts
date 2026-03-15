@@ -20,7 +20,6 @@ export type {
   EntityKey,
   EntityEvent,
   EntityDefinition,
-  EntityRef,
   NormalizerPluginOptions,
   NormalizerQueryOptions,
   ReadonlyEntityMap,
