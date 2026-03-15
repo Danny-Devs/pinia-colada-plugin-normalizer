@@ -260,7 +260,7 @@ export function createEntityStore(): EntityStore {
     release(entityType, id) {
       const key = toEntityKey(entityType, id)
       const current = refCounts.get(key)
-      if (current != null) {
+      if (current != null && current > 0) {
         refCounts.set(key, current - 1)
       }
     },
