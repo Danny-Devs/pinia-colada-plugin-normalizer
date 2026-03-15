@@ -45,6 +45,23 @@ describe('EntityStore (in-memory)', () => {
     })
   })
 
+  describe('replace', () => {
+    it('fully replaces entity without merging', () => {
+      const store = createEntityStore()
+      store.set('contact', '42', { id: '42', name: 'Alice', email: 'alice@test.com' })
+      store.replace('contact', '42', { id: '42', name: 'Alicia' })
+
+      // email should be GONE — replace doesn't merge
+      expect(store.get('contact', '42').value).toEqual({ id: '42', name: 'Alicia' })
+    })
+
+    it('creates new entity if it does not exist', () => {
+      const store = createEntityStore()
+      store.replace('contact', '42', { id: '42', name: 'Alice' })
+      expect(store.get('contact', '42').value).toEqual({ id: '42', name: 'Alice' })
+    })
+  })
+
   describe('setMany (batch)', () => {
     it('stores multiple entities at once', () => {
       const store = createEntityStore()

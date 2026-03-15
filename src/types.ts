@@ -61,11 +61,24 @@ export interface EntityStore {
    * Store an entity. If it already exists, shallow-merges incoming data on top
    * of existing data ({ ...existing, ...incoming }). This preserves fields from
    * richer queries (e.g., detail fetch with email) when a lighter query refetches.
+   *
+   * Use `replace()` instead if you need to overwrite the entity completely.
    */
   set(entityType: string, id: string, data: EntityRecord): void
 
   /**
+   * Store an entity with full replacement (no merge).
+   * Unlike `set()`, this overwrites the entity completely — any existing fields
+   * not present in `data` are removed.
+   *
+   * Use this when you know the incoming data is the complete entity
+   * (e.g., from a full server response or when the server intentionally removed fields).
+   */
+  replace(entityType: string, id: string, data: EntityRecord): void
+
+  /**
    * Store multiple entities at once (batch write).
+   * Uses shallow merge (same as `set()`).
    * More efficient than calling set() in a loop for backends that support transactions.
    */
   setMany(entities: Array<{ entityType: string; id: string; data: EntityRecord }>): void

@@ -107,6 +107,30 @@ export function createEntityStore(): EntityStore {
       })
     },
 
+    replace(entityType, id, data) {
+      const typeMap = getTypeMap(entityType)
+      const existing = typeMap.get(id)
+      const previousData = existing?.value
+
+      if (existing) {
+        // Full replacement — no merge, incoming data IS the entity
+        existing.value = data
+      } else {
+        typeMap.set(id, shallowRef(data))
+        const version = getTypeVersion(entityType)
+        version.value++
+      }
+
+      emit({
+        type: 'set',
+        entityType,
+        id,
+        key: toEntityKey(entityType, id),
+        data,
+        previousData,
+      })
+    },
+
     setMany(entities) {
       // Batch: group by type, minimize version bumps
       const typesWithNewEntities = new Set<string>()
