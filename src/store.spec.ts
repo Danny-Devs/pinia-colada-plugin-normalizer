@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { createEntityStore } from './store'
+import { ENTITY_REF_MARKER } from './types'
 
 describe('EntityStore (in-memory)', () => {
   describe('set / get', () => {
@@ -174,6 +175,43 @@ describe('EntityStore (in-memory)', () => {
       const store = createEntityStore()
       const result = store.getByType('nonexistent')
       expect(result.value).toEqual([])
+    })
+  })
+
+  describe('getEntriesByType', () => {
+    it('returns id+data pairs for all entities of a type', () => {
+      const store = createEntityStore()
+      store.set('contact', '1', { name: 'Alice' })
+      store.set('contact', '2', { name: 'Bob' })
+      store.set('order', '100', { total: 50 })
+
+      const entries = store.getEntriesByType('contact')
+      expect(entries).toHaveLength(2)
+      expect(entries.map(e => e.id).sort()).toEqual(['1', '2'])
+      expect(entries.find(e => e.id === '1')?.data.name).toBe('Alice')
+    })
+
+    it('returns canonical store IDs (not heuristic)', () => {
+      const store = createEntityStore()
+      // Store with a composite ID that doesn't match any field in the data
+      store.set('member', 'acme-42', { orgId: 'acme', userId: '42', role: 'admin' })
+
+      const entries = store.getEntriesByType('member')
+      expect(entries).toHaveLength(1)
+      expect(entries[0].id).toBe('acme-42') // canonical ID, not 'acme' or '42'
+    })
+
+    it('returns empty array for non-existent type', () => {
+      const store = createEntityStore()
+      expect(store.getEntriesByType('nonexistent')).toEqual([])
+    })
+
+    it('excludes phantom refs (undefined value)', () => {
+      const store = createEntityStore()
+      // get() creates a phantom ref
+      store.get('contact', '99')
+      const entries = store.getEntriesByType('contact')
+      expect(entries).toEqual([])
     })
   })
 
@@ -390,6 +428,44 @@ describe('EntityStore (in-memory)', () => {
       expect(snapshot).toEqual({
         'contact:42': { id: '42', name: 'Alice' },
       })
+    })
+
+    it('round-trips entity data containing EntityRefs (nested entities)', () => {
+      const store1 = createEntityStore()
+
+      // Simulate normalized entity data: order has a nested EntityRef for its customer
+      const orderData = {
+        orderId: 'order-1',
+        total: 100,
+        customer: {
+          [ENTITY_REF_MARKER]: true,
+          entityType: 'contact',
+          id: '42',
+          key: 'contact:42',
+        },
+      }
+      store1.set('order', 'order-1', orderData)
+      store1.set('contact', '42', { contactId: '42', name: 'Alice' })
+
+      // Serialize to JSON (Symbols must survive the round-trip)
+      const snapshot = store1.toJSON()
+      const json = JSON.stringify(snapshot)
+      const parsed = JSON.parse(json)
+
+      // Hydrate into a fresh store
+      const store2 = createEntityStore()
+      store2.hydrate(parsed)
+
+      // The contact should be restored normally
+      expect(store2.get('contact', '42').value?.name).toBe('Alice')
+
+      // The order's customer field should be a proper EntityRef with the Symbol marker
+      const restoredOrder = store2.get('order', 'order-1').value!
+      expect(restoredOrder.total).toBe(100)
+      const customerRef = restoredOrder.customer as any
+      expect(customerRef[ENTITY_REF_MARKER]).toBe(true)
+      expect(customerRef.entityType).toBe('contact')
+      expect(customerRef.id).toBe('42')
     })
   })
 })

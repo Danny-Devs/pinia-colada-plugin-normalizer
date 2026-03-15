@@ -16,8 +16,87 @@ import type {
   EntityEvent,
   EntityKey,
   EntityRecord,
+  EntityRef,
   EntityStore,
 } from './types'
+import { ENTITY_REF_MARKER } from './types'
+
+/**
+ * Sentinel key used in JSON serialization to represent EntityRefs.
+ * EntityRefs use a Symbol marker (ENTITY_REF_MARKER) which doesn't survive
+ * JSON.stringify. This string key is used as the wire format in toJSON/hydrate.
+ * @internal
+ */
+const ENTITY_REF_JSON_KEY = '__pcn_ref'
+
+/**
+ * Walk data and replace EntityRef objects (Symbol-marked) with a JSON-safe
+ * wire format. Used by toJSON() to produce serializable snapshots.
+ * @internal
+ */
+function encodeEntityRefs(data: unknown): unknown {
+  if (data == null || typeof data !== 'object') return data
+
+  if (Array.isArray(data)) {
+    return data.map(encodeEntityRefs)
+  }
+
+  const record = data as Record<string | symbol, unknown>
+  if (record[ENTITY_REF_MARKER] === true) {
+    // Replace Symbol-marked EntityRef with string-keyed wire format
+    return {
+      [ENTITY_REF_JSON_KEY]: true,
+      entityType: record.entityType,
+      id: record.id,
+      key: record.key,
+    }
+  }
+
+  // Walk children
+  let changed = false
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(record)) {
+    const encoded = encodeEntityRefs(value)
+    result[key] = encoded
+    if (encoded !== value) changed = true
+  }
+  return changed ? result : data
+}
+
+/**
+ * Walk data and replace wire-format EntityRefs with Symbol-marked EntityRef
+ * objects. Used by hydrate() to restore the in-memory representation.
+ * @internal
+ */
+function decodeEntityRefs(data: unknown): unknown {
+  if (data == null || typeof data !== 'object') return data
+
+  if (Array.isArray(data)) {
+    return data.map(decodeEntityRefs)
+  }
+
+  const record = data as Record<string, unknown>
+  if (record[ENTITY_REF_JSON_KEY] === true && 'entityType' in record && 'key' in record) {
+    // Restore Symbol-marked EntityRef from wire format
+    const ref: EntityRef = {
+      [ENTITY_REF_MARKER]: true,
+      entityType: record.entityType as string,
+      id: record.id as string,
+      key: record.key as EntityKey,
+    }
+    return ref
+  }
+
+  // Walk children
+  let changed = false
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(record)) {
+    const decoded = decodeEntityRefs(value)
+    result[key] = decoded
+    if (decoded !== value) changed = true
+  }
+  return changed ? result : data
+}
 
 type EntityListener = (event: EntityEvent) => void
 
@@ -108,6 +187,9 @@ export function createEntityStore(): EntityStore {
         existing.value = { ...previousData, ...data }
       } else if (existing) {
         existing.value = data
+        // Bump type version — this is a phantom ref being populated (functionally a new entity)
+        const version = getTypeVersion(entityType)
+        version.value++
       } else {
         // New entity
         typeMap.set(id, shallowRef(data))
@@ -165,6 +247,7 @@ export function createEntityStore(): EntityStore {
           existing.value = { ...previousData, ...data }
         } else if (existing) {
           existing.value = data
+          typesWithNewEntities.add(entityType)
         } else {
           typeMap.set(id, shallowRef(data))
           typesWithNewEntities.add(entityType)
@@ -241,6 +324,18 @@ export function createEntityStore(): EntityStore {
       })
     },
 
+    getEntriesByType(entityType) {
+      const typeMap = storage.get(entityType)
+      if (!typeMap) return []
+      const result: Array<{ id: string; data: EntityRecord }> = []
+      for (const [id, ref] of typeMap.entries()) {
+        if (ref.value !== undefined) {
+          result.push({ id, data: ref.value })
+        }
+      }
+      return result
+    },
+
     has(entityType, id) {
       const ref = storage.get(entityType)?.get(id)
       return ref != null && ref.value !== undefined
@@ -305,7 +400,7 @@ export function createEntityStore(): EntityStore {
       for (const [entityType, typeMap] of storage) {
         for (const [id, ref] of typeMap) {
           if (ref.value !== undefined) {
-            snapshot[toEntityKey(entityType, id)] = ref.value
+            snapshot[toEntityKey(entityType, id)] = encodeEntityRefs(ref.value) as EntityRecord
           }
         }
       }
@@ -318,7 +413,7 @@ export function createEntityStore(): EntityStore {
         if (separatorIndex === -1) continue
         const entityType = key.slice(0, separatorIndex)
         const id = key.slice(separatorIndex + 1)
-        store.set(entityType, id, data)
+        store.set(entityType, id, decodeEntityRefs(data) as EntityRecord)
       }
     },
   }

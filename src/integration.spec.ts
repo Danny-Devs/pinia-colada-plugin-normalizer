@@ -642,6 +642,42 @@ describe('Plugin Integration', () => {
       expect(entityStore.get('contact', '1').value?.email).toBe('new@test.com')
     })
 
+    it('commit A then rollback B preserves A\'s confirmed change', async () => {
+      const { pinia } = factory(
+        async () => ({ contactId: '1', name: 'Alice', email: 'alice@test.com' }),
+        ['contacts', '1'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const { transaction } = useOptimisticUpdate(pinia)
+      const entityStore = useEntityStore(pinia)
+
+      // Transaction A: change name
+      const txA = transaction()
+      txA.set('contact', '1', { contactId: '1', name: 'Alicia' })
+
+      // Transaction B: change email
+      const txB = transaction()
+      txB.set('contact', '1', { contactId: '1', email: 'new@test.com' })
+
+      // Both changes visible
+      expect(entityStore.get('contact', '1').value?.name).toBe('Alicia')
+      expect(entityStore.get('contact', '1').value?.email).toBe('new@test.com')
+
+      // A commits (server confirmed name change)
+      txA.commit()
+
+      // B rolls back (email change failed)
+      txB.rollback()
+
+      // A's confirmed name change must survive B's rollback
+      expect(entityStore.get('contact', '1').value?.name).toBe('Alicia')
+      // Email should revert to server truth (updated after A's commit)
+      expect(entityStore.get('contact', '1').value?.email).toBe('alice@test.com')
+    })
+
     it('double rollback/commit is safe (no-op)', async () => {
       const { pinia } = factory(
         async () => ({ contactId: '1', name: 'Alice' }),
@@ -904,6 +940,43 @@ describe('Plugin Integration', () => {
 
       await flushPromises()
       expect(wrapper.vm.data).toEqual([])
+    })
+
+    it('entity removed then re-added triggers re-render (Bug 5: missing entity reactive trigger)', async () => {
+      const { pinia, wrapper } = factory(
+        async () => [
+          { contactId: '1', name: 'Alice' },
+          { contactId: '2', name: 'Bob' },
+        ],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const entityStore = useEntityStore(pinia)
+      expect((wrapper.vm.data as any[]).length).toBe(2)
+
+      // Remove contact:2 directly from the store (simulating GC)
+      entityStore.remove('contact', '2')
+      await nextTick()
+
+      // Query should now show only Alice (Bob's ref resolves to undefined, filtered out in denorm)
+      // Note: the denormalized array will still have 2 entries but Bob's will be undefined
+      const data1 = wrapper.vm.data as any[]
+      const validContacts1 = data1.filter((c: any) => c != null)
+      expect(validContacts1.length).toBe(1)
+      expect(validContacts1[0].name).toBe('Alice')
+
+      // Re-add contact:2 — the subscriber should detect this via entityKeys check
+      // and trigger the customRef, causing a re-render with Bob included again
+      entityStore.set('contact', '2', { contactId: '2', name: 'Bob Returns' })
+      await nextTick()
+
+      const data2 = wrapper.vm.data as any[]
+      const validContacts2 = data2.filter((c: any) => c != null)
+      expect(validContacts2.length).toBe(2)
+      expect(validContacts2.find((c: any) => c.contactId === '2')?.name).toBe('Bob Returns')
     })
   })
 })

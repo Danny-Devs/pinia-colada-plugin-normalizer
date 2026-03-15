@@ -162,6 +162,154 @@ describe('Optimistic update pattern', () => {
 })
 
 // ─────────────────────────────────────────────
+// BUG: Concurrent optimistic commit-then-rollback
+// ─────────────────────────────────────────────
+
+describe('Optimistic update: commit A then rollback B (server truth regression)', () => {
+  it('rolling back B after A commits does NOT revert A\'s confirmed change', () => {
+    const store = createEntityStore()
+    store.set('contact', '1', { id: '1', name: 'Alice', email: 'alice@test.com' })
+
+    // Inline optimistic update logic (same as useOptimisticUpdate but without Pinia)
+    const serverTruth = new Map<string, { existed: boolean; data?: Record<string, unknown> }>()
+    const activeTransactions: Array<{ mutations: Array<{ entityType: string; id: string; type: 'set' | 'remove'; data?: Record<string, unknown> }> }>
+      = []
+
+    function entityKey(entityType: string, id: string) { return `${entityType}:${id}` }
+    function splitKey(key: string): [string, string] {
+      const idx = key.indexOf(':')
+      return [key.slice(0, idx), key.slice(idx + 1)]
+    }
+
+    function snapshotIfNeeded(entityType: string, id: string) {
+      const key = entityKey(entityType, id)
+      if (!serverTruth.has(key)) {
+        const existed = store.has(entityType, id)
+        serverTruth.set(key, {
+          existed,
+          data: existed ? { ...store.get(entityType, id).value! } : undefined,
+        })
+      }
+    }
+
+    function recompute(affectedKeys: Set<string>) {
+      for (const key of affectedKeys) {
+        const truth = serverTruth.get(key)
+        if (!truth) continue
+        const [eType, eId] = splitKey(key)
+        const stillReferenced = activeTransactions.some(tx =>
+          tx.mutations.some(m => entityKey(m.entityType, m.id) === key),
+        )
+        if (!stillReferenced) {
+          if (truth.existed && truth.data) store.replace(eType, eId, truth.data)
+          else if (!truth.existed) store.remove(eType, eId)
+          serverTruth.delete(key)
+        } else {
+          if (truth.existed && truth.data) store.replace(eType, eId, truth.data)
+          else if (!truth.existed && store.has(eType, eId)) store.remove(eType, eId)
+        }
+      }
+      for (const tx of activeTransactions) {
+        for (const m of tx.mutations) {
+          if (m.type === 'set' && m.data) store.set(m.entityType, m.id, m.data)
+          else if (m.type === 'remove') store.remove(m.entityType, m.id)
+        }
+      }
+    }
+
+    // Transaction A: change name
+    const txAMutations: Array<{ entityType: string; id: string; type: 'set' | 'remove'; data?: Record<string, unknown> }> = []
+    const txAEntry = { mutations: txAMutations }
+    activeTransactions.push(txAEntry)
+    snapshotIfNeeded('contact', '1')
+    txAMutations.push({ entityType: 'contact', id: '1', type: 'set', data: { id: '1', name: 'Alicia' } })
+    store.set('contact', '1', { id: '1', name: 'Alicia' })
+
+    // Transaction B: change email
+    const txBMutations: Array<{ entityType: string; id: string; type: 'set' | 'remove'; data?: Record<string, unknown> }> = []
+    const txBEntry = { mutations: txBMutations }
+    activeTransactions.push(txBEntry)
+    snapshotIfNeeded('contact', '1') // already exists, not overwritten
+    txBMutations.push({ entityType: 'contact', id: '1', type: 'set', data: { id: '1', email: 'new@test.com' } })
+    store.set('contact', '1', { id: '1', email: 'new@test.com' })
+
+    // Both changes visible
+    expect(store.get('contact', '1').value?.name).toBe('Alicia')
+    expect(store.get('contact', '1').value?.email).toBe('new@test.com')
+
+    // A commits (server confirmed the name change)
+    const idxA = activeTransactions.indexOf(txAEntry)
+    activeTransactions.splice(idxA, 1)
+    const affectedKeysA = new Set(txAMutations.map(m => entityKey(m.entityType, m.id)))
+    for (const key of affectedKeysA) {
+      const stillReferenced = activeTransactions.some(tx =>
+        tx.mutations.some(m => entityKey(m.entityType, m.id) === key),
+      )
+      if (!stillReferenced) {
+        serverTruth.delete(key)
+      } else {
+        // FIX: apply this tx's mutations on top of OLD server truth
+        const truth = serverTruth.get(key)
+        if (truth) {
+          let newData = truth.data ? { ...truth.data } : undefined
+          for (const m of txAMutations) {
+            if (entityKey(m.entityType, m.id) === key) {
+              if (m.type === 'set' && m.data) {
+                newData = newData ? { ...newData, ...m.data } : { ...m.data }
+              } else if (m.type === 'remove') {
+                newData = undefined
+              }
+            }
+          }
+          serverTruth.set(key, {
+            existed: newData != null,
+            data: newData,
+          })
+        }
+      }
+    }
+
+    // B rolls back (email change failed)
+    const idxB = activeTransactions.indexOf(txBEntry)
+    const affectedKeysB = new Set(txBMutations.map(m => entityKey(m.entityType, m.id)))
+    activeTransactions.splice(idxB, 1)
+    recompute(affectedKeysB)
+
+    // A's confirmed name change should survive B's rollback
+    // BUG: This FAILS — name is 'Alice' instead of 'Alicia'
+    expect(store.get('contact', '1').value?.name).toBe('Alicia')
+    // Email should be restored to server truth
+    expect(store.get('contact', '1').value?.email).toBe('alice@test.com')
+  })
+})
+
+// ─────────────────────────────────────────────
+// BUG: get() phantom ref + getByType() reactivity
+// ─────────────────────────────────────────────
+
+describe('Store: phantom ref from get() before getByType()', () => {
+  it('getByType includes entity set via phantom ref from prior get()', () => {
+    const store = createEntityStore()
+
+    // Step 1: getByType first — computed is cached, typeMap is empty
+    const allContacts = store.getByType('contact')
+    expect(allContacts.value).toEqual([])
+
+    // Step 2: get() creates a phantom ref (subscribe-before-data pattern)
+    const ref = store.get('contact', '42')
+    expect(ref.value).toBeUndefined()
+
+    // Step 3: set() populates the phantom ref
+    store.set('contact', '42', { id: '42', name: 'Alice' })
+
+    // Step 4: getByType should include Alice
+    // BUG: This FAILS — version wasn't bumped, computed doesn't re-run
+    expect(allContacts.value).toHaveLength(1)
+    expect(allContacts.value[0].name).toBe('Alice')
+  })
+})
+
+// ─────────────────────────────────────────────
 // Entity index pattern (store-level)
 // ─────────────────────────────────────────────
 

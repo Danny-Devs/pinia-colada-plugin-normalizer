@@ -141,6 +141,17 @@ export interface EntityStore {
   getByType(entityType: string): ComputedRef<EntityRecord[]>
 
   /**
+   * Get all entities of a given type as id+data pairs.
+   * Non-reactive snapshot — use `getByType()` for reactive views.
+   *
+   * This returns the store's canonical IDs alongside entity data,
+   * which is essential for features like indexes that need to map
+   * IDs to field values. Unlike `getByType()` (which returns data only),
+   * this preserves the ID that the store uses internally.
+   */
+  getEntriesByType(entityType: string): Array<{ id: string; data: EntityRecord }>
+
+  /**
    * Check if an entity exists in the store.
    */
   has(entityType: string, id: string): boolean

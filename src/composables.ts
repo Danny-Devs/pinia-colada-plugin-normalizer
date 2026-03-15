@@ -506,12 +506,11 @@ export function createEntityIndex(
   // Reverse lookup: entityId → fieldValue (for cleanup on update)
   const entityValues = new Map<string, string>()
 
-  // Build initial index from existing entities
-  const allEntities = store.getByType(entityType)
-  for (const entity of allEntities.value) {
-    const id = findEntityId(entity)
-    if (!id) continue
-    const value = extractor(entity)
+  // Build initial index from existing entities.
+  // Uses getEntriesByType() which returns canonical store IDs alongside data,
+  // avoiding the heuristic ID guessing that fails with composite keys.
+  for (const { id, data } of store.getEntriesByType(entityType)) {
+    const value = extractor(data)
     if (value != null) {
       addToIndex(id, value)
     }
@@ -559,16 +558,6 @@ export function createEntityIndex(
       if (set.size === 0) index.delete(value)
     }
     entityValues.delete(id)
-  }
-
-  function findEntityId(entity: EntityRecord): string | undefined {
-    // Try common ID fields
-    if (entity.id != null) return String(entity.id)
-    // Fall back to checking all string/number values — this is a best effort
-    for (const [key, value] of Object.entries(entity)) {
-      if (key.endsWith('Id') && value != null) return String(value)
-    }
-    return undefined
   }
 
   return {

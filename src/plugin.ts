@@ -18,7 +18,7 @@
  * @module pinia-colada-plugin-normalizer
  */
 
-import { customRef, shallowRef } from 'vue'
+import { customRef, onScopeDispose, shallowRef } from 'vue'
 import type { PiniaColadaPlugin } from '@pinia/colada'
 import { defineStore, type Pinia } from 'pinia'
 import type {
@@ -161,21 +161,45 @@ export function PiniaColadaNormalizer(
           let cachedState: State | null = null
           let cachedData: unknown = null
 
-          // Invalidate denorm cache only when a REFERENCED entity changes.
-          // denormCache keys are entity keys (e.g., 'contact:42') populated
-          // during denormalization — they track all entities this query reads,
-          // including transitive deps from nested entity refs.
-          // When the cache is cold (empty), no invalidation needed — the next
-          // read rebuilds fresh from the store.
+          // Shared trigger function — set inside customRef, used by the subscriber
+          // to notify the customRef when a referenced entity changes.
+          let triggerCustomRef: (() => void) | null = null
+
+          // Invalidate denorm cache when a REFERENCED entity changes.
+          // Two checks:
+          // 1. denormCache.has(key) — entity was denormalized on a previous read
+          // 2. entityKeys.includes(key) — entity is referenced by this query's
+          //    normalized data but was missing at denormalization time (returned
+          //    undefined, never entered denormCache). Without this check, entities
+          //    that arrive after the first denormalization would never trigger
+          //    a re-render because no reactive dependency was created for them.
           const unsubDenormWatcher = entityStoreInstance.subscribe((event) => {
-            if (denormCache.has(event.key)) {
+            const inCache = denormCache.has(event.key)
+            const inEntityKeys = !inCache
+              && entry.ext[NORM_META_KEY].value.entityKeys.includes(event.key)
+
+            if (inCache || inEntityKeys) {
               denormCache.clear()
               cachedState = null
               cachedData = null
+              // Trigger the customRef so consumers re-read denormalized data.
+              // For entity updates, Vue reactivity from store.get().value would
+              // also trigger re-reads. But for removals (shallowRef orphaned, not
+              // reassigned) and for entityKeys-only hits (entity was missing at
+              // first read), no reactive dep exists — we must trigger manually.
+              // Calling trigger redundantly for updates is harmless (Vue batches).
+              if (triggerCustomRef) {
+                triggerCustomRef()
+              }
             }
           })
 
-          // Store the unsubscribe function on the entry for cleanup on removal.
+          // Clean up subscription when the effect scope is disposed (SSR teardown).
+          // This prevents memory leaks when the app is unmounted without going
+          // through the 'remove' action for every entry.
+          onScopeDispose(unsubDenormWatcher)
+
+          // Also store on the entry for cleanup on explicit entry removal.
           // Using a non-enumerable property to avoid polluting the entry.
           Object.defineProperty(entry, '_normUnsub', {
             value: unsubDenormWatcher,
@@ -184,8 +208,10 @@ export function PiniaColadaNormalizer(
 
           // Replace entry.state with a customRef that normalizes on write
           // and denormalizes on read.
-          entry.state = customRef((track, trigger) => ({
-            get(): State {
+          entry.state = customRef((track, trigger) => {
+            triggerCustomRef = trigger
+            return {
+              get(): State {
               track()
               // Denormalize on read: replace EntityRefs with live store data
               if (rawState.status === 'success' && rawState.data != null) {
@@ -263,7 +289,8 @@ export function PiniaColadaNormalizer(
               cachedData = null
               trigger()
             },
-          })) as typeof entry.state
+            }
+          }) as typeof entry.state
         })
       }
 
@@ -740,6 +767,10 @@ function walkAndDenormalize(
       if (newItem !== item) changed = true
       return newItem
     })
+    // Backtrack: allow this array to be revisited from other paths.
+    // Circular refs are still caught because the array is in `visited`
+    // during its own subtree traversal.
+    visited.delete(data)
     return changed ? result : data
   }
 
@@ -778,6 +809,10 @@ function walkAndDenormalize(
     result[key] = newValue
     if (newValue !== value) changed = true
   }
+  // Backtrack: allow this object to be revisited from other ref paths.
+  // Circular refs are still caught because the object is in `visited`
+  // during its own subtree traversal.
+  visited.delete(data as object)
   return changed ? result : data
 }
 

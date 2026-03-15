@@ -291,4 +291,57 @@ describe('denormalize', () => {
     expect(denormalize(42, store)).toBe(42)
     expect(denormalize('hello', store)).toBe('hello')
   })
+
+  it('resolves same entity referenced from multiple paths (no cache)', () => {
+    const store = createEntityStore()
+    // org:5 has a nested EntityRef (simulating normalized nested data)
+    store.set('org', '5', { orgId: '5', name: 'Acme Corp' })
+    store.set('contact', '1', {
+      id: '1',
+      name: 'Alice',
+      org: { [ENTITY_REF_MARKER]: true, entityType: 'org', id: '5', key: 'org:5' },
+    })
+    store.set('contact', '2', {
+      id: '2',
+      name: 'Bob',
+      org: { [ENTITY_REF_MARKER]: true, entityType: 'org', id: '5', key: 'org:5' },
+    })
+
+    // Two refs to different contacts, each referencing the SAME org entity
+    const normalized = [
+      { [ENTITY_REF_MARKER]: true, entityType: 'contact', id: '1', key: 'contact:1' },
+      { [ENTITY_REF_MARKER]: true, entityType: 'contact', id: '2', key: 'contact:2' },
+    ]
+
+    // Denormalize WITHOUT cache — the visited set backtracking must allow
+    // org:5 to be fully resolved for both contacts
+    const result = denormalize(normalized, store) as any[]
+    expect(result).toHaveLength(2)
+    expect(result[0].name).toBe('Alice')
+    expect(result[0].org.name).toBe('Acme Corp') // org resolved for contact 1
+    expect(result[1].name).toBe('Bob')
+    expect(result[1].org.name).toBe('Acme Corp') // org also resolved for contact 2
+  })
+
+  it('still handles circular references without infinite loop', () => {
+    const store = createEntityStore()
+    // Create a circular reference: contact references itself via a nested ref
+    store.set('contact', '1', {
+      id: '1',
+      name: 'Alice',
+      bestFriend: { [ENTITY_REF_MARKER]: true, entityType: 'contact', id: '1', key: 'contact:1' },
+    })
+
+    const normalized = {
+      [ENTITY_REF_MARKER]: true,
+      entityType: 'contact',
+      id: '1',
+      key: 'contact:1',
+    }
+
+    // Should not infinite loop — circular ref returns the entity as-is
+    const result = denormalize(normalized, store) as any
+    expect(result.name).toBe('Alice')
+    // bestFriend is the same entity object (circular) — returned as-is by visited check
+  })
 })
