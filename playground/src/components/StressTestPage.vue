@@ -133,7 +133,7 @@ const storeSize = computed(() => {
   <div class="stress-page">
     <p class="page-desc">
       Push the normalizer to its limits. Generate hundreds of entities, fire rapid mutations,
-      and verify reactivity stays consistent.
+      and verify no duplicates are created under load.
     </p>
 
     <!-- Config -->
