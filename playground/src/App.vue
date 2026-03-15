@@ -54,7 +54,7 @@ function activateDiana() {
     <!-- Demo page -->
     <template v-if="currentPage === 'demo'">
       <p class="tagline">
-        Store each record once. Update it in one place, every view reflects the change.
+        Update an entity once, and every query that references it reflects the change automatically. No <code>invalidateQueries()</code>. No stale data. No forgotten cache entries.
       </p>
 
       <!-- Control strip -->
@@ -83,7 +83,7 @@ function activateDiana() {
           With normalization, each entity is stored once. Update it anywhere and both views reflect the change instantly.
         </template>
         <template v-else>
-          Without normalization, each query stores its own copy. Update one and the other goes stale.
+          Without normalization, each query stores its own copy. Update one and the other goes stale. In an app with denormalized data, you'd need to invalidate every query that might contain this entity.
         </template>
       </div>
 
