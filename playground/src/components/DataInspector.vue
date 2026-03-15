@@ -40,7 +40,8 @@ const cacheSnapshot = computed(() => {
       // Detail queries fetch full entity (with email),
       // list queries fetch lightweight (no email).
       const data = entry.state.value.data
-      const isDetailQuery = keyStr.includes('"1"') || keyStr.includes('"2"') || keyStr.includes('"3"') || keyStr.includes('"4"')
+      // Detail queries return a single object, list queries return an array
+      const isDetailQuery = !Array.isArray(data)
       const refView = buildRefView(data, isDetailQuery)
       result.push({ key: displayKey, data: refView, isNormalized: true })
     } else {

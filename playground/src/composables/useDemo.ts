@@ -27,6 +27,7 @@ export function useDemo() {
   const log = reactive<LogEntry[]>([])
 
   const entityStore = useEntityStore()
+  const queryCache = useQueryCache()
 
   function logEvent(message: string, type: LogEntry['type'] = 'update') {
     const time = new Date().toLocaleTimeString('en-US', { hour12: false })
@@ -57,7 +58,6 @@ export function useDemo() {
       // NOT NORMALIZED: update only the detail query's cache blob.
       // The list query has its OWN independent copy — it goes stale.
       // To fix the list, you'd need to invalidate it (triggering a refetch).
-      const queryCache = useQueryCache()
       queryCache.setQueryData(
         ['raw', 'contacts', contact.contactId],
         () => ({ ...contact }),
