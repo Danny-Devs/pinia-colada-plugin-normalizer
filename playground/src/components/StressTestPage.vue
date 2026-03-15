@@ -16,6 +16,7 @@ const totalUpdates = ref(0)
 const totalDeduped = ref(0)
 const elapsed = ref(0)
 const lastRenderMs = ref(0)
+const seededEntityCount = ref(0) // snapshot of entityCount when test started
 let intervalId: ReturnType<typeof setInterval> | null = null
 let startTime = 0
 
@@ -63,6 +64,7 @@ function seedStore() {
 
   totalUpdates.value = 0
   totalDeduped.value = 0
+  seededEntityCount.value = entityCount.value
 }
 
 // ─── Stress test: rapid random entity updates ──
@@ -109,6 +111,7 @@ function resetStress() {
   activeQueryKeys.value = []
   totalUpdates.value = 0
   totalDeduped.value = 0
+  seededEntityCount.value = 0
   elapsed.value = 0
   lastRenderMs.value = 0
 }
@@ -205,12 +208,12 @@ const storeSize = computed(() => {
     <!-- Dedup verification (only after test started) -->
     <div v-if="totalUpdates > 0 || isRunning" class="dedup-panel">
       <h3 class="section-title">Entity Deduplication Check</h3>
-      <p class="dedup-result success" v-if="storeSize >= entityCount">
-        {{ storeSize }} entities in store ({{ entityCount }} from stress test).
+      <p class="dedup-result success" v-if="storeSize >= seededEntityCount">
+        {{ storeSize }} entities in store ({{ seededEntityCount }} from stress test).
         No duplicates. Normalization is working correctly.
       </p>
       <p class="dedup-result danger" v-else>
-        Store has {{ storeSize }} entities but expected at least {{ entityCount }}.
+        Store has {{ storeSize }} entities but expected at least {{ seededEntityCount }}.
         Something is wrong.
       </p>
     </div>
