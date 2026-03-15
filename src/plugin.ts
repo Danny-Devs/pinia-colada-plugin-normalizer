@@ -140,6 +140,16 @@ export function PiniaColadaNormalizer(
           let cachedState: State | null = null
           let cachedData: unknown = null
 
+          // Invalidate denorm cache when ANY entity changes.
+          // Without this, a parent entity's cached result would return stale
+          // nested entity data when a child entity updates but the parent
+          // entity's ShallowRef identity hasn't changed.
+          entityStoreInstance.subscribe(() => {
+            denormCache.clear()
+            cachedState = null
+            cachedData = null
+          })
+
           // Replace entry.state with a customRef that normalizes on write
           // and denormalizes on read.
           entry.state = customRef((track, trigger) => ({
