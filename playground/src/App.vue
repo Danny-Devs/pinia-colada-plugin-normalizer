@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import AppHeader from './components/AppHeader.vue'
 import ContactList from './components/ContactList.vue'
 import ContactDetail from './components/ContactDetail.vue'
@@ -16,14 +16,23 @@ const selectedId = ref<string | null>('1')
 const { normalized, entityWrites, rawUpdates, log, applyUpdate, resetDemo } = useDemo()
 const clicked = reactive(new Set<string>())
 
-const apiCalls = computed(() => mockApi.fetchCount.value)
+// Track only API calls caused by user actions, not initial page load
+const baseline = ref(0)
+onMounted(() => {
+  // Wait for initial queries to settle, then snapshot the baseline
+  setTimeout(() => { baseline.value = mockApi.fetchCount.value }, 600)
+})
+const extraApiCalls = computed(() => Math.max(0, mockApi.fetchCount.value - baseline.value))
 
 function toggleMode() {
   normalized.value = !normalized.value
   selectedId.value = '1'
   clicked.clear()
   mockApi.resetFetchCount()
+  baseline.value = 0
   resetDemo()
+  // Re-snapshot baseline after mode-switch queries settle
+  setTimeout(() => { baseline.value = mockApi.fetchCount.value }, 600)
 }
 
 function renameAlice() {
@@ -79,7 +88,7 @@ function activateDiana() {
             <button @click="activateDiana" :class="['action-btn', { applied: clicked.has('diana') }]" :disabled="clicked.has('diana')">Diana → active</button>
           </div>
         </div>
-        <span class="api-counter">API calls: {{ apiCalls }}</span>
+        <span class="api-counter">Refetches: {{ extraApiCalls }}</span>
       </div>
 
       <!-- Mode hint -->
