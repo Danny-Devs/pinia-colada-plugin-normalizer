@@ -1,7 +1,0 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "cd playground && pnpm install && npx vite build",
-  "outputDirectory": "playground/dist",
-  "installCommand": "pnpm install",
-  "framework": null
-}
