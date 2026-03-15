@@ -54,6 +54,6 @@ pnpm build       # outputs to dist/
 - Auto-normalize by default (false positives with non-entity objects)
 - Use string markers for EntityRef (use Symbols)
 - Add ext keys outside of `extend` handler
-- Deep merge entities (whole-entity replacement only)
+- Deep merge entities (shallow merge only — `{ ...existing, ...incoming }`)
 - Use module-level singletons for state (breaks SSR)
 - Write to `entry.state.value` in `after()` callbacks (bypasses action system)

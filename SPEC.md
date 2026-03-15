@@ -122,11 +122,11 @@ Too much boilerplate. Most APIs use `id`. Users shouldn't have to define their e
 
 Breaks on real-world APIs with non-standard ID fields (`contactId`, `_id`, `uuid`), composite keys, or shared auto-increment IDs across types. Also, auto-normalizing everything causes false positives with non-entity objects.
 
-### Whole-entity replacement over deep merging
+### Shallow merge over deep merging
 
 - Apollo requires field-level merge functions (complex, fragile, error-prone)
-- We replace the whole entity. Vue's `reactive()` diffs property-by-property internally and only triggers watchers for properties that actually changed
-- This gives us the simplicity of replacement with the performance of surgical updates
+- We shallow-merge incoming data on top of existing (`{ ...existing, ...incoming }`). This means a detail query can enrich an entity with fields (e.g., email) that a list query didn't fetch, and a list refetch won't overwrite those fields.
+- Vue's reactivity diffs property-by-property internally and only triggers watchers for properties that actually changed
 - No GraphQL schema required
 
 ### Pinia Colada integration surface (minimal)
@@ -216,7 +216,7 @@ The plugin doesn't care where data comes from:
 | | Apollo | pinia-colada-plugin-normalizer |
 |---|---|---|
 | Schema | Requires GraphQL schema | Convention-based, no schema needed |
-| Merge strategy | Per-field merge functions (complex) | Whole-entity replacement (Vue handles diff) |
+| Merge strategy | Per-field merge functions (complex) | Shallow merge (simple, preserves enriched fields) |
 | Flexibility | All-or-nothing normalization | Hybrid: normalize entities, leave hierarchies |
 | Transport | GraphQL only | Any (REST, GraphQL, RPC, WebSocket, SSE) |
 | Bundle | ~30kb+ | Core ~2-5kb (estimated) |

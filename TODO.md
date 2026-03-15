@@ -25,6 +25,8 @@
 - [x] Cache-persister compatibility (customRef getter returns denormalized data)
 - [x] has() correctness fix (accounts for placeholder refs from get())
 - [x] Export normalize/denormalize from public API
+- [x] Shallow merge on entity set (preserves enriched fields from richer queries)
+- [x] Playground demo with normalization ON/OFF toggle, dark mode, data inspector
 - [ ] Integration tests (Pinia Colada plugin + useQuery → fetch → normalize → read round-trip)
 - [ ] Denormalize caching / structural sharing
 - [ ] Post update in Discussion #531
@@ -71,3 +73,8 @@
 - [x] Architecture fix: recursive denormalization with circular ref protection
 - [x] Bug fix: has() returns false for placeholder refs from get()
 - [x] SPEC.md, RESEARCH.md, TODO.md, AGENTS.md — fully consistent
+- [x] Shallow merge on entity set (preserves enriched fields)
+- [x] Playground demo: normalization ON/OFF toggle, dark/light mode, data inspector
+- [x] Playground: honest two-mode demo (separate query sets, mutable mock server)
+- [x] Playground: projected references in inspector (→ contact:1 { name, role, status })
+- [x] Squashed commit history (39 → 8 clean commits)

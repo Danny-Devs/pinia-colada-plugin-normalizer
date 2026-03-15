@@ -2,7 +2,7 @@
 
 ## Entity Replacement & Vue Reactivity
 
-Vue's `reactive()` patches property-by-property on whole-entity replacement. When you replace an entity object, Vue internally diffs old vs new and only triggers watchers for properties that actually changed. This means "crude" whole-entity replacement is actually surgically precise at the reactivity level.
+The entity store uses shallow merge (`{ ...existing, ...incoming }`) when updating entities. This preserves fields from richer queries — a detail fetch that adds email won't be overwritten when a lighter list query refetches. Vue's reactivity diffs property-by-property internally, so only watchers for changed properties re-trigger.
 
 ### Scale thresholds for entity replacement + computed derivations
 
@@ -150,7 +150,7 @@ Each entry in the `_pc_query` Pinia store contains:
 ### Our approach (pinia-colada-plugin-normalizer)
 - Opt-in normalization (per-query or global) + `defineEntity` escape hatch
 - Hybrid: normalize entities, leave hierarchies as-is
-- Whole-entity replacement (Vue reactivity handles the diff)
+- Shallow merge (preserves enriched fields, Vue reactivity handles the diff)
 - WebSocket-first design via `useEntityStore()` composable
 - Swappable persistence (in-memory → IndexedDB → SQLite)
 - Leverages Vue's built-in reactivity (no custom engine needed)
@@ -187,7 +187,7 @@ Apollo's approach (per-field merge functions via Type Policies) is fragile becau
 - Users forget to add merge functions for new fields → subtle data loss
 - Config surface grows with every entity type
 
-Our approach: replace the whole entity. Vue's reactivity diffs property-by-property internally. Same surgical precision, zero configuration, zero bugs from missing merge functions.
+Our approach: shallow merge (`{ ...existing, ...incoming }`). Incoming data overwrites matching fields, but existing fields not present in the incoming data are preserved. Vue's reactivity diffs property-by-property internally. Zero configuration, zero bugs from missing merge functions, and richer queries don't get overwritten by lighter ones.
 
 For non-entity nested data: don't normalize it at all. Leave it in the query cache as-is.
 
@@ -196,7 +196,7 @@ For non-entity nested data: don't normalize it at all. Leave it in the query cac
 ### Fixed (10 issues)
 1. **Naming** → `pinia-colada-plugin-normalizer`
 2. **ext ShallowRef** → `ShallowRef<NormMeta>` initialized in `scope.run()`
-3. **Args mutation** → moved to `after()` callback
+3. **Args mutation** → eliminated entirely (customRef setter handles normalization)
 4. **scope.run()** → wraps all reactive ref creation in extend
 5. **Module augmentation** → `UseQueryOptions`, `UseQueryOptionsGlobal`, `UseQueryEntryExtensions`
 7. **Entity false positives** → removed generic `'entity'` fallback, require `__typename` or `defineEntity()`

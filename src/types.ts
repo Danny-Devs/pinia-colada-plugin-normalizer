@@ -58,8 +58,9 @@ export interface EntityStore {
   // ── Writes ──────────────────────────────────
 
   /**
-   * Store an entity. If it already exists, replaces it (whole-entity replacement).
-   * Vue's reactivity handles property-level diffing automatically.
+   * Store an entity. If it already exists, shallow-merges incoming data on top
+   * of existing data ({ ...existing, ...incoming }). This preserves fields from
+   * richer queries (e.g., detail fetch with email) when a lighter query refetches.
    */
   set(entityType: string, id: string, data: EntityRecord): void
 
