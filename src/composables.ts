@@ -10,8 +10,8 @@
  * @module pinia-colada-plugin-normalizer/composables
  */
 
-import { computed, shallowRef } from 'vue'
-import type { ComputedRef } from 'vue'
+import { computed, shallowRef, toValue } from 'vue'
+import type { ComputedRef, MaybeRefOrGetter, ShallowRef } from 'vue'
 import type { Pinia } from 'pinia'
 import type { EntityEvent, EntityRecord, EntityRegistry, ResolveEntity } from './types'
 import { useEntityStore } from './plugin'
@@ -107,6 +107,66 @@ export function onEntityRemoved(
     },
     { entityType },
   )
+}
+
+// ─────────────────────────────────────────────
+// Entity Ref (single-entity reactive access)
+// ─────────────────────────────────────────────
+
+/**
+ * Reactive ref to a single entity in the store.
+ * Returns a ShallowRef that auto-updates when the entity changes.
+ *
+ * Use this for direct entity access without a query — ideal for
+ * WebSocket apps where entities arrive via push, not pull.
+ *
+ * The ref is NOT retained for GC (same as direct `store.get()`).
+ * Entities created via `store.set()` are immune to GC regardless.
+ *
+ * Accepts a reactive ID — when the ID changes, the ref switches
+ * to the new entity automatically.
+ *
+ * @example
+ * ```typescript
+ * import { useEntityRef } from 'pinia-colada-plugin-normalizer'
+ *
+ * // Static ID:
+ * const contact = useEntityRef('contact', '42')
+ *
+ * // Reactive ID (e.g., from route params):
+ * const contact = useEntityRef('contact', () => route.params.id)
+ *
+ * // Typed when EntityRegistry is augmented:
+ * const contact = useEntityRef('contact', '42')
+ * // contact.value is Contact | undefined
+ * ```
+ */
+export function useEntityRef<K extends string & keyof EntityRegistry>(
+  entityType: K,
+  id: MaybeRefOrGetter<string>,
+  pinia?: Pinia,
+): ComputedRef<EntityRegistry[K] | undefined>
+export function useEntityRef(
+  entityType: string,
+  id: MaybeRefOrGetter<string>,
+  pinia?: Pinia,
+): ComputedRef<EntityRecord | undefined>
+export function useEntityRef(
+  entityType: string,
+  id: MaybeRefOrGetter<string>,
+  pinia?: Pinia,
+): ComputedRef<EntityRecord | undefined> {
+  const store = useEntityStore(pinia)
+
+  // Computed handles both static and reactive IDs.
+  // When id is static, toValue() is a no-op and the computed
+  // only re-runs when the entity's ShallowRef changes.
+  // When id is reactive, the computed re-runs on ID change too.
+  return computed(() => {
+    const resolvedId = toValue(id)
+    if (!store.has(entityType, resolvedId)) return undefined
+    return store.get(entityType, resolvedId).value
+  })
 }
 
 // ─────────────────────────────────────────────

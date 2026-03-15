@@ -17,7 +17,8 @@ import type { PiniaColadaOptions } from '@pinia/colada'
 import {
   PiniaColadaNormalizer, useEntityStore, defineEntity,
   onEntityAdded, onEntityUpdated, onEntityRemoved,
-  useOptimisticUpdate, useEntityQuery,
+  useOptimisticUpdate, useEntityQuery, useEntityRef,
+  useNormalizeMutation,
   updateQueryData, removeEntityFromAllQueries,
 } from './index'
 import { NORM_META_KEY } from './types'
@@ -977,6 +978,269 @@ describe('Plugin Integration', () => {
       const validContacts2 = data2.filter((c: any) => c != null)
       expect(validContacts2.length).toBe(2)
       expect(validContacts2.find((c: any) => c.contactId === '2')?.name).toBe('Bob Returns')
+    })
+  })
+
+  // ─────────────────────────────────────────────
+  // useEntityRef
+  // ─────────────────────────────────────────────
+
+  describe('useEntityRef', () => {
+    it('returns reactive ref to a single entity', async () => {
+      const { pinia } = factory(
+        async () => [
+          { contactId: '1', name: 'Alice' },
+          { contactId: '2', name: 'Bob' },
+        ],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      // Mount a component that uses useEntityRef
+      const wrapper = mount(
+        defineComponent({
+          template: '<div>{{ contact?.name }}</div>',
+          setup() {
+            const contact = useEntityRef('contact', '1', pinia)
+            return { contact }
+          },
+        }),
+        { global: { plugins: [pinia] } },
+      )
+
+      expect(wrapper.vm.contact?.name).toBe('Alice')
+
+      // Update entity — ref should update
+      const entityStore = useEntityStore(pinia)
+      entityStore.set('contact', '1', { contactId: '1', name: 'Alicia' })
+
+      expect(wrapper.vm.contact?.name).toBe('Alicia')
+    })
+
+    it('returns undefined for non-existent entity', async () => {
+      const { pinia } = factory(
+        async () => [{ contactId: '1', name: 'Alice' }],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const wrapper = mount(
+        defineComponent({
+          template: '<div></div>',
+          setup() {
+            return { contact: useEntityRef('contact', '999', pinia) }
+          },
+        }),
+        { global: { plugins: [pinia] } },
+      )
+
+      expect(wrapper.vm.contact).toBeUndefined()
+    })
+
+    it('accepts reactive ID and switches entities', async () => {
+      const { pinia } = factory(
+        async () => [
+          { contactId: '1', name: 'Alice' },
+          { contactId: '2', name: 'Bob' },
+        ],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const activeId = ref('1')
+
+      const wrapper = mount(
+        defineComponent({
+          template: '<div></div>',
+          setup() {
+            return { contact: useEntityRef('contact', activeId, pinia) }
+          },
+        }),
+        { global: { plugins: [pinia] } },
+      )
+
+      expect(wrapper.vm.contact?.name).toBe('Alice')
+
+      // Change the reactive ID
+      activeId.value = '2'
+      await nextTick()
+
+      expect(wrapper.vm.contact?.name).toBe('Bob')
+    })
+  })
+
+  // ─────────────────────────────────────────────
+  // useNormalizeMutation
+  // ─────────────────────────────────────────────
+
+  describe('useNormalizeMutation', () => {
+    it('normalizes arbitrary data into the entity store', async () => {
+      const { pinia } = factory(
+        async () => [],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const normalizeMutation = useNormalizeMutation(pinia)
+      const entityStore = useEntityStore(pinia)
+
+      // Simulate a mutation response
+      normalizeMutation({ contactId: '99', name: 'New Contact', email: 'new@test.com' })
+
+      expect(entityStore.has('contact', '99')).toBe(true)
+      expect(entityStore.get('contact', '99').value?.name).toBe('New Contact')
+    })
+
+    it('normalizes nested entities from mutation response', async () => {
+      const { pinia } = factory(
+        async () => [],
+        ['orders'],
+        {
+          entities: {
+            contact: defineEntity({ idField: 'contactId' }),
+            order: defineEntity({ idField: 'orderId' }),
+          },
+        },
+      )
+
+      await flushPromises()
+
+      const normalizeMutation = useNormalizeMutation(pinia)
+      const entityStore = useEntityStore(pinia)
+
+      // Server response with nested entity
+      normalizeMutation({
+        orderId: 'order-1',
+        total: 100,
+        customer: { contactId: '42', name: 'Alice' },
+      })
+
+      expect(entityStore.has('order', 'order-1')).toBe(true)
+      expect(entityStore.has('contact', '42')).toBe(true)
+      expect(entityStore.get('contact', '42').value?.name).toBe('Alice')
+    })
+
+    it('mutation-normalized entities are visible to queries', async () => {
+      const { pinia, wrapper } = factory(
+        async () => [{ contactId: '1', name: 'Alice' }],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      // Normalize a mutation response that updates an existing entity
+      const normalizeMutation = useNormalizeMutation(pinia)
+      normalizeMutation({ contactId: '1', name: 'Alicia', email: 'new@test.com' })
+
+      await nextTick()
+
+      // Query should reflect the update (entity store is shared)
+      const data = wrapper.vm.data as any[]
+      expect(data[0].name).toBe('Alicia')
+    })
+  })
+
+  describe('duplicate installation guard', () => {
+    it('throws if PiniaColadaNormalizer is installed twice on the same Pinia instance', () => {
+      const pinia = createPinia()
+
+      expect(() => {
+        mount(
+          defineComponent({
+            template: '<div></div>',
+            setup() {
+              return {}
+            },
+          }),
+          {
+            global: {
+              plugins: [
+                pinia,
+                [PiniaColada, {
+                  plugins: [
+                    PiniaColadaNormalizer({ entities: {} }),
+                    PiniaColadaNormalizer({ entities: {} }),
+                  ],
+                } satisfies PiniaColadaOptions],
+              ],
+            },
+          },
+        )
+      }).toThrowError(/already installed on this Pinia instance/)
+    })
+
+    it('allows separate Pinia instances to each have the normalizer', async () => {
+      const pinia1 = createPinia()
+      const pinia2 = createPinia()
+
+      const pluginOpts = {
+        entities: {
+          contact: defineEntity({ idField: 'contactId' }),
+        },
+      }
+
+      // Should not throw — different Pinia instances
+      const wrapper1 = mount(
+        defineComponent({
+          template: '<div></div>',
+          setup() {
+            const result = useQuery({
+              query: async () => ({ contactId: '1', name: 'Alice' }),
+              key: ['c1'],
+              normalize: true,
+            })
+            return { ...result }
+          },
+        }),
+        {
+          global: {
+            plugins: [
+              pinia1,
+              [PiniaColada, {
+                plugins: [PiniaColadaNormalizer(pluginOpts)],
+              } satisfies PiniaColadaOptions],
+            ],
+          },
+        },
+      )
+
+      const wrapper2 = mount(
+        defineComponent({
+          template: '<div></div>',
+          setup() {
+            const result = useQuery({
+              query: async () => ({ contactId: '2', name: 'Bob' }),
+              key: ['c2'],
+              normalize: true,
+            })
+            return { ...result }
+          },
+        }),
+        {
+          global: {
+            plugins: [
+              pinia2,
+              [PiniaColada, {
+                plugins: [PiniaColadaNormalizer(pluginOpts)],
+              } satisfies PiniaColadaOptions],
+            ],
+          },
+        },
+      )
+
+      await flushPromises()
+
+      expect((wrapper1.vm as any).data).toEqual({ contactId: '1', name: 'Alice' })
+      expect((wrapper2.vm as any).data).toEqual({ contactId: '2', name: 'Bob' })
     })
   })
 })

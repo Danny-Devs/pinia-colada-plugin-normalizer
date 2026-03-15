@@ -71,6 +71,19 @@ const useNormalizerStore = /* @__PURE__ */ defineStore(NORMALIZER_STORE_ID, () =
 })
 
 // ─────────────────────────────────────────────
+// Duplicate-install guard
+// ─────────────────────────────────────────────
+
+/**
+ * Maps each Pinia instance to the plugin callback that installed the normalizer.
+ * If a DIFFERENT callback tries to install on the same Pinia, it's a duplicate.
+ * Re-installs from the same callback (e.g., multiple app.use(PiniaColada) sharing
+ * one Pinia) are allowed — they just re-initialize the same config.
+ * @internal
+ */
+const installedPluginByPinia = /* @__PURE__ */ new WeakMap<Pinia, Function>()
+
+// ─────────────────────────────────────────────
 // Plugin Factory
 // ─────────────────────────────────────────────
 
@@ -112,7 +125,21 @@ export function PiniaColadaNormalizer(
     autoNormalize = false,
   } = options
 
-  return ({ queryCache, pinia, scope }) => {
+  const pluginCallback: PiniaColadaPlugin = ({ queryCache, pinia, scope }) => {
+    // Guard: prevent silent state overwrite from duplicate installation.
+    // A different plugin callback on the same Pinia means two PiniaColadaNormalizer()
+    // calls in the same plugins array — that's a bug. Re-installs from the same
+    // callback (e.g., dualFactory sharing one Pinia across two app mounts) are fine.
+    const existingPlugin = installedPluginByPinia.get(pinia)
+    if (existingPlugin && existingPlugin !== pluginCallback) {
+      throw new Error(
+        '[pinia-colada-plugin-normalizer] PiniaColadaNormalizer is already installed on this Pinia instance. '
+        + 'Installing it twice would silently overwrite entity definitions and query cache. '
+        + 'Remove the duplicate plugin registration.',
+      )
+    }
+    installedPluginByPinia.set(pinia, pluginCallback)
+
     // Get the per-Pinia-instance normalizer store (SSR-safe)
     const normalizerStore = useNormalizerStore(pinia)
     if (userStore) {
@@ -138,7 +165,7 @@ export function PiniaColadaNormalizer(
           // Initialize ext metadata
           entry.ext[NORM_META_KEY] = shallowRef<NormMeta>({
             isNormalized: false,
-            entityKeys: [],
+            entityKeys: new Set<string>(),
           })
 
           // Check if this query should be normalized
@@ -176,7 +203,7 @@ export function PiniaColadaNormalizer(
           const unsubDenormWatcher = entityStoreInstance.subscribe((event) => {
             const inCache = denormCache.has(event.key)
             const inEntityKeys = !inCache
-              && entry.ext[NORM_META_KEY].value.entityKeys.includes(event.key)
+              && entry.ext[NORM_META_KEY].value.entityKeys.has(event.key)
 
             if (inCache || inEntityKeys) {
               denormCache.clear()
@@ -256,9 +283,9 @@ export function PiniaColadaNormalizer(
                   // GC lifecycle: retain new keys FIRST, then release old ones.
                   // This order prevents a transient zero-refcount window for
                   // entities present in both old and new sets.
-                  const newEntityKeys = result.entities.map(
+                  const newEntityKeys = new Set(result.entities.map(
                     (e) => `${e.entityType}:${e.id}`,
-                  )
+                  ))
                   for (const key of newEntityKeys) {
                     const [type, id] = splitEntityKey(key)
                     entityStoreInstance.retain(type, id)
@@ -313,6 +340,8 @@ export function PiniaColadaNormalizer(
       }
     })
   }
+
+  return pluginCallback
 }
 
 // ─────────────────────────────────────────────
@@ -403,7 +432,7 @@ export function invalidateEntity(
   // Scan all query entries for ones that reference this entity
   for (const entry of queryCache.getEntries()) {
     const meta = (entry as any).ext?.[NORM_META_KEY]?.value as NormMeta | undefined
-    if (meta?.isNormalized && meta.entityKeys.includes(entityKey)) {
+    if (meta?.isNormalized && meta.entityKeys.has(entityKey)) {
       // Refetch this entry — queryCache.fetch() re-runs the query function
       // and updates the entry state, which flows through our customRef setter.
       queryCache.fetch(entry).catch(() => {
@@ -459,6 +488,54 @@ export function updateQueryData(
 }
 
 /**
+ * Returns a function that normalizes arbitrary data into the entity store.
+ * Use this in mutation `onSuccess` handlers to auto-extract entities
+ * from server responses — no manual `entityStore.set()` calls needed.
+ *
+ * Entities are stored as "untracked" (no retain/release), same as
+ * WebSocket-created entities. They are immune to GC.
+ *
+ * **Important**: If using with optimistic updates, the optimistic
+ * transaction should be committed (or will be rolled back on error)
+ * before the server response is normalized. The standard `onMutate` →
+ * `onSuccess` → `onError` lifecycle handles this correctly when using
+ * `apply()` which auto-rolls-back on error.
+ *
+ * @example
+ * ```typescript
+ * import { useNormalizeMutation, useOptimisticUpdate } from 'pinia-colada-plugin-normalizer'
+ *
+ * // Basic usage — auto-extract entities from mutation response:
+ * const normalizeMutation = useNormalizeMutation()
+ * const { mutate } = useMutation({
+ *   mutation: (data) => api.updateContact(data),
+ *   onSuccess: (response) => normalizeMutation(response),
+ * })
+ *
+ * // With optimistic updates:
+ * const { apply } = useOptimisticUpdate()
+ * const { mutate } = useMutation({
+ *   mutation: (data) => api.updateContact(data),
+ *   onMutate: (data) => apply('contact', data.contactId, data),
+ *   onSuccess: (response) => normalizeMutation(response),
+ *   onError: (_err, _vars, rollback) => rollback?.(),
+ * })
+ * ```
+ */
+export function useNormalizeMutation(pinia?: Pinia): (data: unknown) => void {
+  const normalizerStore = pinia ? useNormalizerStore(pinia) : useNormalizerStore()
+  const entityStoreInstance = normalizerStore.getStore()
+  const { entityDefs, defaultIdField } = normalizerStore.getEntityDefs()
+
+  return (data: unknown) => {
+    const result = normalize(data, entityDefs, defaultIdField)
+    if (result.entities.length > 0) {
+      entityStoreInstance.setMany(result.entities)
+    }
+  }
+}
+
+/**
  * Remove an entity from ALL normalized queries that reference it.
  *
  * Scans all query entries, finds ones that reference the entity,
@@ -508,7 +585,7 @@ export function removeEntityFromAllQueries(
   // Scan all normalized query entries that reference this entity.
   for (const entry of queryCache.getEntries()) {
     const meta = (entry as any).ext?.[NORM_META_KEY]?.value as NormMeta | undefined
-    if (!meta?.isNormalized || !meta.entityKeys.includes(entityKey)) continue
+    if (!meta?.isNormalized || !meta.entityKeys.has(entityKey)) continue
 
     // Read denormalized data (via customRef getter)
     const currentState = entry.state.value

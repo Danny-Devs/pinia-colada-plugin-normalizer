@@ -10,7 +10,7 @@
 export {
   PiniaColadaNormalizer, useEntityStore, invalidateEntity,
   updateQueryData, removeEntityFromAllQueries,
-  normalize, denormalize,
+  useNormalizeMutation, normalize, denormalize,
 } from './plugin'
 
 // Entity Store
@@ -28,6 +28,7 @@ export type { OptimisticTransaction } from './composables'
 
 // Composables (Phase 3: Performance & DX)
 export {
+  useEntityRef,
   useEntityQuery,
   createEntityIndex,
 } from './composables'
