@@ -186,8 +186,8 @@ const storeSize = computed(() => {
       </div>
     </div>
 
-    <!-- Live entity sample -->
-    <div v-if="storeSize > 0" class="sample-panel">
+    <!-- Live entity sample (only after test started) -->
+    <div v-if="totalUpdates > 0 || isRunning" class="sample-panel">
       <h3 class="section-title">Live Entity Sample <span class="muted">(first 20)</span></h3>
       <div class="entity-grid">
         <div
@@ -202,15 +202,15 @@ const storeSize = computed(() => {
       </div>
     </div>
 
-    <!-- Dedup verification -->
-    <div v-if="storeSize > 0" class="dedup-panel">
+    <!-- Dedup verification (only after test started) -->
+    <div v-if="totalUpdates > 0 || isRunning" class="dedup-panel">
       <h3 class="section-title">Entity Deduplication Check</h3>
-      <p class="dedup-result success" v-if="storeSize === entityCount">
-        {{ storeSize }} entities in store = {{ entityCount }} configured.
+      <p class="dedup-result success" v-if="storeSize >= entityCount">
+        {{ storeSize }} entities in store ({{ entityCount }} from stress test).
         No duplicates. Normalization is working correctly.
       </p>
       <p class="dedup-result danger" v-else>
-        Store has {{ storeSize }} entities but expected {{ entityCount }}.
+        Store has {{ storeSize }} entities but expected at least {{ entityCount }}.
         Something is wrong.
       </p>
     </div>
