@@ -25,10 +25,44 @@ export type EntityRecord = Record<string, unknown>
  */
 export type EntityKey = `${string}:${string}`
 
+// ─────────────────────────────────────────────
+// Entity Type Registry
+// ─────────────────────────────────────────────
+
+/**
+ * User-extensible type registry for entity types.
+ * Augment this interface via module augmentation to get full type safety
+ * across the entire API surface.
+ *
+ * @example
+ * ```typescript
+ * declare module 'pinia-colada-plugin-normalizer' {
+ *   interface EntityRegistry {
+ *     contact: { contactId: string; name: string; email: string }
+ *     order: { orderId: string; total: number; status: string }
+ *   }
+ * }
+ *
+ * // Now fully typed:
+ * entityStore.get('contact', '1')          // ShallowRef<Contact | undefined>
+ * entityStore.set('contact', '1', data)    // data must match Contact
+ * useEntityQuery('contact', c => c.name)   // c is Contact
+ * onEntityAdded('contact', e => e.data)    // data is Contact | undefined
+ * ```
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface EntityRegistry {}
+
+/** Resolve entity type from registry, falling back to EntityRecord. */
+export type ResolveEntity<K extends string> =
+  K extends keyof EntityRegistry ? EntityRegistry[K] : EntityRecord
+
 /**
  * Event emitted when the entity store changes.
+ * When the entity type is registered in `EntityRegistry`, `data` and
+ * `previousData` are typed accordingly.
  */
-export interface EntityEvent {
+export interface EntityEvent<T extends EntityRecord = EntityRecord> {
   /** The type of change */
   type: 'set' | 'remove'
   /** Entity type (e.g., 'contact', 'order') */
@@ -38,9 +72,9 @@ export interface EntityEvent {
   /** The full entity key */
   key: EntityKey
   /** The entity data (undefined for 'remove' events) */
-  data: EntityRecord | undefined
+  data: T | undefined
   /** The previous entity data (undefined if entity didn't exist before) */
-  previousData: EntityRecord | undefined
+  previousData: T | undefined
 }
 
 /**
@@ -64,6 +98,7 @@ export interface EntityStore {
    *
    * Use `replace()` instead if you need to overwrite the entity completely.
    */
+  set<K extends string & keyof EntityRegistry>(entityType: K, id: string, data: EntityRegistry[K]): void
   set(entityType: string, id: string, data: EntityRecord): void
 
   /**
@@ -74,6 +109,7 @@ export interface EntityStore {
    * Use this when you know the incoming data is the complete entity
    * (e.g., from a full server response or when the server intentionally removed fields).
    */
+  replace<K extends string & keyof EntityRegistry>(entityType: K, id: string, data: EntityRegistry[K]): void
   replace(entityType: string, id: string, data: EntityRecord): void
 
   /**
@@ -94,12 +130,14 @@ export interface EntityStore {
    * Get a single entity by type and ID.
    * Returns a reactive ref that updates when the entity changes.
    */
+  get<K extends string & keyof EntityRegistry>(entityType: K, id: string): ShallowRef<EntityRegistry[K] | undefined>
   get(entityType: string, id: string): ShallowRef<EntityRecord | undefined>
 
   /**
    * Get all entities of a given type.
    * Returns a computed ref that updates when any entity of that type changes.
    */
+  getByType<K extends string & keyof EntityRegistry>(entityType: K): ComputedRef<EntityRegistry[K][]>
   getByType(entityType: string): ComputedRef<EntityRecord[]>
 
   /**
@@ -121,6 +159,10 @@ export interface EntityStore {
    *
    * @returns Unsubscribe function
    */
+  subscribe<K extends string & keyof EntityRegistry>(
+    listener: (event: EntityEvent<EntityRegistry[K]>) => void,
+    filter: { entityType: K },
+  ): () => void
   subscribe(
     listener: (event: EntityEvent) => void,
     filter?: { entityType?: string },

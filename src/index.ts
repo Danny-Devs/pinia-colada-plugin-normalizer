@@ -40,6 +40,8 @@ export type {
   EntityKey,
   EntityEvent,
   EntityDefinition,
+  EntityRegistry,
+  ResolveEntity,
   NormalizerPluginOptions,
   NormalizerQueryOptions,
 } from './types'

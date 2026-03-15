@@ -13,7 +13,7 @@
 import { computed, shallowRef } from 'vue'
 import type { ComputedRef } from 'vue'
 import type { Pinia } from 'pinia'
-import type { EntityEvent, EntityRecord } from './types'
+import type { EntityEvent, EntityRecord, EntityRegistry, ResolveEntity } from './types'
 import { useEntityStore } from './plugin'
 
 // ─────────────────────────────────────────────
@@ -32,6 +32,8 @@ import { useEntityStore } from './plugin'
  * })
  * ```
  */
+export function onEntityAdded<K extends string & keyof EntityRegistry>(entityType: K, callback: (event: EntityEvent<EntityRegistry[K]>) => void, pinia?: Pinia): () => void
+export function onEntityAdded(entityType: string, callback: (event: EntityEvent) => void, pinia?: Pinia): () => void
 export function onEntityAdded(
   entityType: string,
   callback: (event: EntityEvent) => void,
@@ -59,6 +61,8 @@ export function onEntityAdded(
  * })
  * ```
  */
+export function onEntityUpdated<K extends string & keyof EntityRegistry>(entityType: K, callback: (event: EntityEvent<EntityRegistry[K]>) => void, pinia?: Pinia): () => void
+export function onEntityUpdated(entityType: string, callback: (event: EntityEvent) => void, pinia?: Pinia): () => void
 export function onEntityUpdated(
   entityType: string,
   callback: (event: EntityEvent) => void,
@@ -87,6 +91,8 @@ export function onEntityUpdated(
  * })
  * ```
  */
+export function onEntityRemoved<K extends string & keyof EntityRegistry>(entityType: K, callback: (event: EntityEvent<EntityRegistry[K]>) => void, pinia?: Pinia): () => void
+export function onEntityRemoved(entityType: string, callback: (event: EntityEvent) => void, pinia?: Pinia): () => void
 export function onEntityRemoved(
   entityType: string,
   callback: (event: EntityEvent) => void,
@@ -290,13 +296,34 @@ export function useOptimisticUpdate(pinia?: Pinia) {
         // Remove this transaction
         activeTransactions.splice(idx, 1)
 
-        // Clean up server truth for entities no longer referenced
+        // Clean up or update server truth for affected entities
         for (const key of affectedKeys) {
           const stillReferenced = activeTransactions.some((tx) =>
             tx.mutations.some((m) => entityKey(m.entityType, m.id) === key),
           )
           if (!stillReferenced) {
             serverTruth.delete(key)
+          } else {
+            // Update server truth by applying this transaction's mutations on top
+            // of the OLD server truth. We can't use the current store value because
+            // it includes other transactions' optimistic mutations.
+            const truth = serverTruth.get(key)
+            if (truth) {
+              let newData = truth.data ? { ...truth.data } : undefined
+              for (const m of mutations) {
+                if (entityKey(m.entityType, m.id) === key) {
+                  if (m.type === 'set' && m.data) {
+                    newData = newData ? { ...newData, ...m.data } : { ...m.data }
+                  } else if (m.type === 'remove') {
+                    newData = undefined
+                  }
+                }
+              }
+              serverTruth.set(key, {
+                existed: newData != null,
+                data: newData,
+              })
+            }
           }
         }
       },
@@ -411,6 +438,8 @@ export function createCoalescer<T = string>(
  * const allContacts = useEntityQuery('contact')
  * ```
  */
+export function useEntityQuery<K extends string & keyof EntityRegistry>(entityType: K, filter?: (entity: EntityRegistry[K]) => boolean, pinia?: Pinia): ComputedRef<EntityRegistry[K][]>
+export function useEntityQuery(entityType: string, filter?: (entity: EntityRecord) => boolean, pinia?: Pinia): ComputedRef<EntityRecord[]>
 export function useEntityQuery(
   entityType: string,
   filter?: (entity: EntityRecord) => boolean,
