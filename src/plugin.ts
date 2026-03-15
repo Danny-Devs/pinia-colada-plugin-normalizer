@@ -19,8 +19,8 @@
  */
 
 import { customRef, shallowRef } from 'vue'
-import type { PiniaColadaPlugin } from '@pinia/colada'
-import { defineStore } from 'pinia'
+import type { PiniaColadaPlugin, UseQueryEntry } from '@pinia/colada'
+import { defineStore, type Pinia } from 'pinia'
 import type {
   EntityRecord,
   EntityRef,
@@ -46,9 +46,12 @@ const NORMALIZER_STORE_ID = '_pc_normalizer'
  */
 const useNormalizerStore = /* @__PURE__ */ defineStore(NORMALIZER_STORE_ID, () => {
   let store: EntityStore = createEntityStore()
+  let qCache: any = null
   function setStore(s: EntityStore) { store = s }
   function getStore() { return store }
-  return { getStore, setStore }
+  function setQueryCache(qc: any) { qCache = qc }
+  function getQueryCache() { return qCache }
+  return { getStore, setStore, getQueryCache, setQueryCache }
 })
 
 // ─────────────────────────────────────────────
@@ -99,6 +102,7 @@ export function PiniaColadaNormalizer(
     if (userStore) {
       normalizerStore.setStore(userStore)
     }
+    normalizerStore.setQueryCache(queryCache)
     const entityStoreInstance = normalizerStore.getStore()
 
     queryCache.$onAction(({ name, args }) => {
@@ -221,26 +225,94 @@ export function PiniaColadaNormalizer(
  * SSR-safe: uses defineStore to scope per Pinia instance.
  * Must be called after the plugin is installed.
  *
- * In component context, Pinia is available via inject (auto-detected).
+ * In component setup or composables, Pinia is auto-detected via inject.
+ * Outside component context (e.g., standalone services), pass the Pinia
+ * instance explicitly — same pattern as `useMutationCache(pinia)`.
+ *
+ * @param pinia - Optional Pinia instance. Required outside component setup.
  *
  * @example
  * ```typescript
  * import { useEntityStore } from 'pinia-colada-plugin-normalizer'
  *
- * // In a component or composable:
+ * // In a component or composable (auto-detected):
  * const entityStore = useEntityStore()
- * const contact = entityStore.get('contact', '42')
  *
- * // Direct write from WebSocket event:
+ * // Outside component context (e.g., WebSocket service):
+ * const entityStore = useEntityStore(pinia)
+ *
  * ws.on('CONTACT_UPDATED', (data) => {
- *   entityStore.set('contact', data.id, data)
+ *   entityStore.set('contact', data.contactId, data)
  * })
  * ```
  */
-export function useEntityStore(): EntityStore {
-  // In component context, Pinia is available via inject (auto-detected by defineStore)
-  const normalizerStore = useNormalizerStore()
+export function useEntityStore(pinia?: Pinia): EntityStore {
+  const normalizerStore = pinia ? useNormalizerStore(pinia) : useNormalizerStore()
   return normalizerStore.getStore()
+}
+
+/**
+ * Invalidates (marks stale + refetches) all active queries that reference
+ * the given entity. Use this when you know an entity is stale and want
+ * dependent queries to refetch from the server.
+ *
+ * For WebSocket apps: usually you DON'T need this — entity store updates
+ * propagate automatically via reactivity. Use this when you want to
+ * force a server round-trip (e.g., after entity removal, or when you
+ * receive a "stale" signal without the actual data).
+ *
+ * In component setup or composables, Pinia is auto-detected via inject.
+ * Outside component context, pass the Pinia instance explicitly.
+ *
+ * @param entityType - The entity type (e.g., 'contact')
+ * @param id - The entity ID (e.g., '42')
+ * @param pinia - Optional Pinia instance. Required outside component setup.
+ *
+ * @example
+ * ```typescript
+ * import { invalidateEntity, useEntityStore } from 'pinia-colada-plugin-normalizer'
+ *
+ * // After removing an entity, refetch all queries that referenced it:
+ * const entityStore = useEntityStore()
+ * entityStore.remove('contact', '42')
+ * invalidateEntity('contact', '42')
+ *
+ * // Or in a WebSocket handler for "entity deleted" events:
+ * ws.on('CONTACT_DELETED', ({ contactId }) => {
+ *   entityStore.remove('contact', contactId)
+ *   invalidateEntity('contact', contactId)
+ * })
+ * ```
+ */
+export function invalidateEntity(
+  entityType: string,
+  id: string,
+  pinia?: Pinia,
+): void {
+  const normalizerStore = pinia ? useNormalizerStore(pinia) : useNormalizerStore()
+  const queryCache = normalizerStore.getQueryCache()
+
+  if (!queryCache) {
+    throw new Error(
+      '[pinia-colada-plugin-normalizer] invalidateEntity() called before plugin installation. '
+      + 'Make sure PiniaColadaNormalizer is installed via PiniaColada plugins option.',
+    )
+  }
+
+  const entityKey = `${entityType}:${id}`
+
+  // Scan all query entries for ones that reference this entity
+  for (const entry of queryCache.getEntries()) {
+    const meta = (entry as any).ext?.[NORM_META_KEY]?.value as NormMeta | undefined
+    if (meta?.isNormalized && meta.entityKeys.includes(entityKey)) {
+      // Refetch this entry — queryCache.fetch() re-runs the query function
+      // and updates the entry state, which flows through our customRef setter.
+      queryCache.fetch(entry).catch(() => {
+        // Silently ignore fetch errors (entry may have been GC'd,
+        // query may be disabled, etc.)
+      })
+    }
+  }
 }
 
 // ─────────────────────────────────────────────
