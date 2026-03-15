@@ -131,6 +131,7 @@ export function PiniaColadaNormalizer(options: NormalizerPluginOptions = {}): Pi
     defaultIdField = "id",
     store: userStore,
     autoNormalize = false,
+    autoRedirect = false,
   } = options;
 
   const pluginCallback: PiniaColadaPlugin = ({ queryCache, pinia, scope }) => {
@@ -185,6 +186,40 @@ export function PiniaColadaNormalizer(options: NormalizerPluginOptions = {}): Pi
             isNormalized: false,
             entityKeys: new Set<string>(),
           });
+
+          // ── Auto-redirect: serve cached entity as placeholderData ──
+          // If autoRedirect is enabled (or per-query redirect is configured),
+          // check if the query key matches a [entityType, id] pattern and
+          // the entity exists in the store. If so, inject it as placeholderData
+          // for instant display while the real query fetches.
+          const redirectOpt = entry.options?.redirect;
+          if (redirectOpt !== false && entry.state.value.status === "pending") {
+            let redirectEntityType: string | undefined;
+            let redirectId: string | undefined;
+
+            if (redirectOpt && typeof redirectOpt === "object") {
+              // Explicit per-query redirect config
+              redirectEntityType = redirectOpt.entityType;
+              redirectId = redirectOpt.getId
+                ? redirectOpt.getId(entry.key)
+                : entry.key.length >= 2 ? String(entry.key[1]) : undefined;
+            } else if (autoRedirect && entry.key.length === 2 && typeof entry.key[0] === "string") {
+              // Convention-based: [entityType, id] where entityType is registered
+              const candidateType = entry.key[0];
+              if (candidateType in entityDefs) {
+                redirectEntityType = candidateType;
+                redirectId = String(entry.key[1]);
+              }
+            }
+
+            if (redirectEntityType && redirectId && entityStoreInstance.has(redirectEntityType, redirectId)) {
+              const rawEntity = entityStoreInstance.get(redirectEntityType, redirectId).value;
+              if (rawEntity != null) {
+                // Denormalize to resolve nested EntityRefs before handing to the template
+                (entry as any).placeholderData = denormalize(rawEntity, entityStoreInstance);
+              }
+            }
+          }
 
           // Check if this query should be normalized
           const shouldNormalize = entry.options?.normalize ?? autoNormalize;

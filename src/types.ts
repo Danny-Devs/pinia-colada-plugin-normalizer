@@ -335,6 +335,19 @@ export interface NormalizerQueryOptions {
    * - Inherits from the global `autoNormalize` option if not set.
    */
   normalize?: boolean;
+
+  /**
+   * Control cache redirect behavior for this query.
+   * - `false`: disable auto-redirect even when `autoRedirect` is enabled globally
+   * - `{ entityType, getId? }`: manually specify the entity mapping for non-standard keys
+   * - `undefined`: use the global `autoRedirect` setting
+   */
+  redirect?: false | {
+    /** The entity type to look up in the store. */
+    entityType: string;
+    /** Extract the entity ID from the query key. Defaults to `key[1]`. */
+    getId?: (key: readonly unknown[]) => string;
+  };
 }
 
 /**
@@ -375,6 +388,26 @@ export interface NormalizerPluginOptions {
    * @default false
    */
   autoNormalize?: boolean;
+
+  /**
+   * Automatically serve cached entities as placeholder data for detail queries.
+   *
+   * When enabled, the plugin detects 2-segment query keys where the first
+   * segment matches a registered entity type (e.g., `['contact', '42']`).
+   * If the entity exists in the store (e.g., from a prior list query),
+   * it's returned as `placeholderData` — instant display while the real
+   * query fetches in the background.
+   *
+   * The convention: `[entityType, entityId]` where `entityType` is a key
+   * in the `entities` config. 1-segment keys (lists) and 3+-segment keys
+   * (nested resources) are skipped.
+   *
+   * Per-query override: set `redirect: false` to disable for a specific query,
+   * or `redirect: { entityType, getId }` to customize the mapping.
+   *
+   * @default false
+   */
+  autoRedirect?: boolean;
 }
 
 // ─────────────────────────────────────────────

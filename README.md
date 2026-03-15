@@ -1,5 +1,11 @@
 # pinia-colada-plugin-normalizer
 
+[![npm version](https://img.shields.io/npm/v/pinia-colada-plugin-normalizer.svg)](https://www.npmjs.com/package/pinia-colada-plugin-normalizer)
+[![npm downloads](https://img.shields.io/npm/dm/pinia-colada-plugin-normalizer.svg)](https://www.npmjs.com/package/pinia-colada-plugin-normalizer)
+[![license](https://img.shields.io/npm/l/pinia-colada-plugin-normalizer.svg)](https://github.com/Danny-Devs/pinia-colada-plugin-normalizer/blob/main/LICENSE)
+
+**[npm](https://www.npmjs.com/package/pinia-colada-plugin-normalizer)** · **[GitHub](https://github.com/Danny-Devs/pinia-colada-plugin-normalizer)**
+
 Normalized entity caching plugin for [Pinia Colada](https://github.com/posva/pinia-colada). Apollo-style normalization with zero configuration and Vue-native performance.
 
 Store each entity **once**. Update it in one place, every query sees the change. No more stale data from missed cache invalidations.
