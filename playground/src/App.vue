@@ -16,11 +16,7 @@ const selectedId = ref<string | null>('1')
 const { normalized, entityWrites, rawUpdates, log, applyUpdate, resetDemo } = useDemo()
 const clicked = reactive(new Set<string>())
 
-// Re-reads fetchCount whenever log changes (log updates on every action)
-const apiCalls = computed(() => {
-  void log.length // track reactivity
-  return mockApi.fetchCount
-})
+const apiCalls = computed(() => mockApi.fetchCount.value)
 
 function toggleMode() {
   normalized.value = !normalized.value
@@ -248,7 +244,7 @@ body {
 /* Panels */
 .panels {
   display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
-  background: var(--border); margin: 16px 0 20px;
+  background: var(--border); margin: 12px 0;
   border: 2px solid var(--border); border-radius: 10px; overflow: hidden;
 }
 .panel-container { background: var(--surface); min-height: 200px; }

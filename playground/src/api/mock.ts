@@ -30,11 +30,13 @@ const ORIGINAL_DATA: Contact[] = [
   { contactId: '4', name: 'Diana Lopez', email: 'diana@acme.com', role: 'Engineer', status: 'inactive' },
 ]
 
+import { ref } from 'vue'
+
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** Tracks how many API calls have been made. */
-export let fetchCount = 0
-export function resetFetchCount() { fetchCount = 0 }
+export const fetchCount = ref(0)
+export function resetFetchCount() { fetchCount.value = 0 }
 
 /** Update the server's data — simulates an external change. */
 export function updateServerData(contact: Contact) {
@@ -53,14 +55,14 @@ export type ContactSummary = Omit<Contact, 'email'>
 
 /** GET /api/contacts — returns lightweight list (no email needed for list view) */
 export async function fetchContacts(): Promise<ContactSummary[]> {
-  fetchCount++
+  fetchCount.value++
   await delay(300)
   return [...serverData.values()].map(({ email, ...rest }) => rest)
 }
 
 /** GET /api/contacts/:id — returns current server state */
 export async function fetchContact(contactId: string): Promise<Contact> {
-  fetchCount++
+  fetchCount.value++
   await delay(200)
   const contact = serverData.get(contactId)
   if (!contact) throw new Error(`Contact ${contactId} not found`)
