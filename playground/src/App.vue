@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive } from 'vue'
 import AppHeader from './components/AppHeader.vue'
 import ContactList from './components/ContactList.vue'
 import ContactDetail from './components/ContactDetail.vue'
@@ -9,30 +9,17 @@ import DataInspector from './components/DataInspector.vue'
 import FeaturesPage from './components/FeaturesPage.vue'
 import StressTestPage from './components/StressTestPage.vue'
 import { useDemo } from './composables/useDemo'
-import * as mockApi from './api/mock'
 
 const currentPage = ref('demo')
 const selectedId = ref<string | null>('1')
 const { normalized, entityWrites, rawUpdates, log, applyUpdate, resetDemo } = useDemo()
 const clicked = reactive(new Set<string>())
 
-// Track only API calls caused by user actions, not initial page load
-const baseline = ref(0)
-onMounted(() => {
-  // Wait for initial queries to settle, then snapshot the baseline
-  setTimeout(() => { baseline.value = mockApi.fetchCount.value }, 600)
-})
-const extraApiCalls = computed(() => Math.max(0, mockApi.fetchCount.value - baseline.value))
-
 function toggleMode() {
   normalized.value = !normalized.value
   selectedId.value = '1'
   clicked.clear()
-  mockApi.resetFetchCount()
-  baseline.value = 0
   resetDemo()
-  // Re-snapshot baseline after mode-switch queries settle
-  setTimeout(() => { baseline.value = mockApi.fetchCount.value }, 600)
 }
 
 function renameAlice() {
@@ -88,7 +75,6 @@ function activateDiana() {
             <button @click="activateDiana" :class="['action-btn', { applied: clicked.has('diana') }]" :disabled="clicked.has('diana')">Diana → active</button>
           </div>
         </div>
-        <span class="api-counter">Refetches: {{ extraApiCalls }}</span>
       </div>
 
       <!-- Mode hint -->
@@ -229,11 +215,6 @@ body {
 .action-btn:hover { background: var(--accent-bg); }
 .action-btn.applied { background: var(--accent); color: #fff; cursor: default; opacity: 0.7; }
 .action-btn:disabled { pointer-events: none; }
-.api-counter {
-  font-family: monospace; font-size: 12px; font-weight: 600;
-  padding: 4px 10px; border-radius: 4px; white-space: nowrap;
-  background: var(--success-bg); color: var(--success);
-}
 .control-stats { flex-shrink: 0; }
 .mini-stat {
   font-family: monospace; font-size: 12px; font-weight: 500;
