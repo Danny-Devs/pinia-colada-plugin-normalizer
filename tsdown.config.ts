@@ -8,7 +8,7 @@ export default defineConfig({
     build: true,
   },
   deps: {
-    onlyAllowBundle: [],
+    onlyBundle: [],
     neverBundle: ['vue', 'pinia', '@pinia/colada'],
   },
   target: 'esnext',
