@@ -29,6 +29,29 @@ describe('EntityStore (in-memory)', () => {
       expect(store.get('contact', '42').value).toEqual({ id: '42', name: 'Alicia', email: 'alice@test.com' })
     })
 
+    it('preserves referential identity when set with identical data', () => {
+      const store = createEntityStore()
+      store.set('contact', '42', { id: '42', name: 'Alice' })
+      const before = store.get('contact', '42').value
+
+      store.set('contact', '42', { id: '42', name: 'Alice' })
+      const after = store.get('contact', '42').value
+
+      // Same reference — no new object created
+      expect(before).toBe(after)
+    })
+
+    it('does not emit events when set with identical data', () => {
+      const store = createEntityStore()
+      store.set('contact', '42', { id: '42', name: 'Alice' })
+
+      const listener = vi.fn()
+      store.subscribe(listener)
+
+      store.set('contact', '42', { id: '42', name: 'Alice' })
+      expect(listener).not.toHaveBeenCalled()
+    })
+
     it('returns undefined ref for non-existent entity', () => {
       const store = createEntityStore()
       const ref = store.get('contact', '999')
@@ -74,6 +97,29 @@ describe('EntityStore (in-memory)', () => {
       expect(store.get('contact', '1').value?.name).toBe('Alice')
       expect(store.get('contact', '2').value?.name).toBe('Bob')
       expect(store.get('order', '100').value?.total).toBe(50)
+    })
+
+    it('skips no-op updates and preserves referential identity', () => {
+      const store = createEntityStore()
+      store.setMany([
+        { entityType: 'contact', id: '1', data: { id: '1', name: 'Alice' } },
+        { entityType: 'contact', id: '2', data: { id: '2', name: 'Bob' } },
+      ])
+      const before1 = store.get('contact', '1').value
+      const before2 = store.get('contact', '2').value
+
+      const listener = vi.fn()
+      store.subscribe(listener)
+
+      // Re-set with identical data — should be no-ops
+      store.setMany([
+        { entityType: 'contact', id: '1', data: { id: '1', name: 'Alice' } },
+        { entityType: 'contact', id: '2', data: { id: '2', name: 'Bob' } },
+      ])
+
+      expect(store.get('contact', '1').value).toBe(before1)
+      expect(store.get('contact', '2').value).toBe(before2)
+      expect(listener).not.toHaveBeenCalled()
     })
   })
 
@@ -217,6 +263,78 @@ describe('EntityStore (in-memory)', () => {
     })
   })
 
+  describe('retain / release / gc', () => {
+    it('gc removes entities with zero refcount', () => {
+      const store = createEntityStore()
+      store.set('contact', '1', { id: '1', name: 'Alice' })
+      store.set('contact', '2', { id: '2', name: 'Bob' })
+
+      store.retain('contact', '1')
+      store.retain('contact', '2')
+      store.release('contact', '2')
+
+      const removed = store.gc()
+
+      expect(removed).toEqual(['contact:2'])
+      expect(store.has('contact', '1')).toBe(true)
+      expect(store.has('contact', '2')).toBe(false)
+    })
+
+    it('gc does not touch entities that were never retained', () => {
+      const store = createEntityStore()
+      // Direct write (e.g., WebSocket) — never retained
+      store.set('contact', '1', { id: '1', name: 'Alice' })
+      // Query-extracted entity — retained then released
+      store.set('contact', '2', { id: '2', name: 'Bob' })
+      store.retain('contact', '2')
+      store.release('contact', '2')
+
+      const removed = store.gc()
+
+      expect(removed).toEqual(['contact:2'])
+      // Direct write entity untouched
+      expect(store.has('contact', '1')).toBe(true)
+    })
+
+    it('multiple retains require matching releases', () => {
+      const store = createEntityStore()
+      store.set('contact', '1', { id: '1', name: 'Alice' })
+
+      store.retain('contact', '1')
+      store.retain('contact', '1') // two queries reference this
+      store.release('contact', '1') // one query gone
+
+      const removed = store.gc()
+      expect(removed).toEqual([]) // still referenced by one query
+      expect(store.has('contact', '1')).toBe(true)
+
+      store.release('contact', '1') // last query gone
+      const removed2 = store.gc()
+      expect(removed2).toEqual(['contact:1'])
+    })
+
+    it('gc returns empty array when nothing to collect', () => {
+      const store = createEntityStore()
+      store.set('contact', '1', { id: '1', name: 'Alice' })
+      store.retain('contact', '1')
+
+      expect(store.gc()).toEqual([])
+    })
+
+    it('gc cleans up refcount entries for collected entities', () => {
+      const store = createEntityStore()
+      store.set('contact', '1', { id: '1', name: 'Alice' })
+      store.retain('contact', '1')
+      store.release('contact', '1')
+      store.gc()
+
+      // Re-add and retain — should start fresh, not carry stale count
+      store.set('contact', '1', { id: '1', name: 'Alice' })
+      store.retain('contact', '1')
+      expect(store.gc()).toEqual([]) // retained, should not be collected
+    })
+  })
+
   describe('clear', () => {
     it('removes all entities', () => {
       const store = createEntityStore()
@@ -226,6 +344,24 @@ describe('EntityStore (in-memory)', () => {
       store.clear()
       expect(store.has('contact', '1')).toBe(false)
       expect(store.has('order', '100')).toBe(false)
+    })
+
+    it('resets refCounts so gc does not collect re-added entities', () => {
+      const store = createEntityStore()
+      store.set('contact', '1', { id: '1', name: 'Alice' })
+      store.retain('contact', '1')
+      store.release('contact', '1')
+
+      // Clear resets everything including refCounts
+      store.clear()
+
+      // Re-add and retain fresh
+      store.set('contact', '1', { id: '1', name: 'Alice' })
+      store.retain('contact', '1')
+
+      // Should not be collected — fresh retain after clear
+      expect(store.gc()).toEqual([])
+      expect(store.has('contact', '1')).toBe(true)
     })
   })
 

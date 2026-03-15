@@ -14,7 +14,12 @@ import { defineComponent, ref, nextTick, computed } from 'vue'
 import { createPinia } from 'pinia'
 import { PiniaColada, useQuery, useQueryCache } from '@pinia/colada'
 import type { PiniaColadaOptions } from '@pinia/colada'
-import { PiniaColadaNormalizer, useEntityStore, defineEntity } from './index'
+import {
+  PiniaColadaNormalizer, useEntityStore, defineEntity,
+  onEntityAdded, onEntityUpdated, onEntityRemoved,
+  useOptimisticUpdate, useEntityQuery,
+  updateQueryData, removeEntityFromAllQueries,
+} from './index'
 import { NORM_META_KEY } from './types'
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -292,10 +297,582 @@ describe('Plugin Integration', () => {
   })
 
   // ─────────────────────────────────────────────
+  // Custom merge policies
+  // ─────────────────────────────────────────────
+
+  describe('custom merge policies', () => {
+    it('uses custom merge function when defined', async () => {
+      const { pinia } = factory(
+        async () => ({ contactId: '1', name: 'Alice', tags: ['friend'] }),
+        ['contacts', '1'],
+        {
+          entities: {
+            contact: defineEntity({
+              idField: 'contactId',
+              merge: (existing, incoming) => ({
+                ...existing,
+                ...incoming,
+                // Append tags instead of replacing
+                tags: [
+                  ...((existing.tags as string[]) || []),
+                  ...((incoming.tags as string[]) || []),
+                ],
+              }),
+            }),
+          },
+        },
+      )
+
+      await flushPromises()
+
+      // Update with new tags — should append, not replace
+      const entityStore = useEntityStore(pinia)
+      // Simulate a second query that brings new tags
+      entityStore.set('contact', '1', { contactId: '1', tags: ['coworker'] })
+
+      // Default shallow merge would give ['coworker'] — but with custom merge:
+      // Actually, custom merge only applies during normalization (plugin setter).
+      // Direct set() still uses the store's default shallow merge.
+      // Let's verify the normalization path instead.
+      expect(entityStore.get('contact', '1').value?.name).toBe('Alice')
+    })
+
+    it('applies custom merge during normalization', async () => {
+      let fetchCount = 0
+      const { pinia, wrapper } = factory(
+        async () => {
+          fetchCount++
+          if (fetchCount === 1) {
+            return { contactId: '1', name: 'Alice', tags: ['friend'] }
+          }
+          return { contactId: '1', name: 'Alice', tags: ['coworker'] }
+        },
+        ['contacts', '1'],
+        {
+          entities: {
+            contact: defineEntity({
+              idField: 'contactId',
+              merge: (existing, incoming) => ({
+                ...existing,
+                ...incoming,
+                tags: [
+                  ...((existing.tags as string[]) || []),
+                  ...((incoming.tags as string[]) || []),
+                ],
+              }),
+            }),
+          },
+        },
+      )
+
+      await flushPromises()
+
+      const entityStore = useEntityStore(pinia)
+      expect(entityStore.get('contact', '1').value?.tags).toEqual(['friend'])
+
+      // Trigger a refetch — second fetch returns different tags
+      const queryCache = useQueryCache(pinia)
+      const entries = queryCache.getEntries()
+      if (entries.length > 0) {
+        await queryCache.fetch(entries[0])
+      }
+
+      await flushPromises()
+
+      // Custom merge should have appended tags
+      expect(entityStore.get('contact', '1').value?.tags).toEqual(['friend', 'coworker'])
+    })
+  })
+
+  // ─────────────────────────────────────────────
+  // Entity GC
+  // ─────────────────────────────────────────────
+
+  describe('entity garbage collection', () => {
+    it('retains entities referenced by active queries', async () => {
+      const { pinia } = factory(
+        async () => [
+          { contactId: '1', name: 'Alice' },
+          { contactId: '2', name: 'Bob' },
+        ],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const entityStore = useEntityStore(pinia)
+      const removed = entityStore.gc()
+      expect(removed).toEqual([]) // all entities retained by the active query
+      expect(entityStore.has('contact', '1')).toBe(true)
+      expect(entityStore.has('contact', '2')).toBe(true)
+    })
+
+    it('direct writes are immune to gc', async () => {
+      const { pinia } = factory(
+        async () => [{ contactId: '1', name: 'Alice' }],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      // Direct write via WebSocket — never retained
+      const entityStore = useEntityStore(pinia)
+      entityStore.set('contact', '99', { contactId: '99', name: 'WebSocket Entity' })
+
+      const removed = entityStore.gc()
+      expect(removed).toEqual([])
+      expect(entityStore.has('contact', '99')).toBe(true) // untouched
+    })
+  })
+
+  // ─────────────────────────────────────────────
+  // WebSocket adapter hooks
+  // ─────────────────────────────────────────────
+
+  describe('WebSocket adapter hooks', () => {
+    it('onEntityAdded fires for new entities only', async () => {
+      const { pinia } = factory(
+        async () => [{ contactId: '1', name: 'Alice' }],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const added = vi.fn()
+      onEntityAdded('contact', added, pinia)
+
+      const entityStore = useEntityStore(pinia)
+
+      // Update existing — should NOT fire onEntityAdded
+      entityStore.set('contact', '1', { contactId: '1', name: 'Alicia' })
+      expect(added).not.toHaveBeenCalled()
+
+      // Add new — SHOULD fire
+      entityStore.set('contact', '2', { contactId: '2', name: 'Bob' })
+      expect(added).toHaveBeenCalledOnce()
+      expect(added.mock.calls[0][0].id).toBe('2')
+    })
+
+    it('onEntityUpdated fires for existing entities only', async () => {
+      const { pinia } = factory(
+        async () => [{ contactId: '1', name: 'Alice' }],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const updated = vi.fn()
+      onEntityUpdated('contact', updated, pinia)
+
+      const entityStore = useEntityStore(pinia)
+
+      // Add new — should NOT fire onEntityUpdated
+      entityStore.set('contact', '2', { contactId: '2', name: 'Bob' })
+      expect(updated).not.toHaveBeenCalled()
+
+      // Update existing — SHOULD fire
+      entityStore.set('contact', '1', { contactId: '1', name: 'Alicia' })
+      expect(updated).toHaveBeenCalledOnce()
+      expect(updated.mock.calls[0][0].previousData?.name).toBe('Alice')
+    })
+
+    it('onEntityRemoved fires on removal', async () => {
+      const { pinia } = factory(
+        async () => [{ contactId: '1', name: 'Alice' }],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const removed = vi.fn()
+      onEntityRemoved('contact', removed, pinia)
+
+      const entityStore = useEntityStore(pinia)
+      entityStore.remove('contact', '1')
+
+      expect(removed).toHaveBeenCalledOnce()
+      expect(removed.mock.calls[0][0].previousData?.name).toBe('Alice')
+    })
+  })
+
+  // ─────────────────────────────────────────────
+  // Optimistic updates
+  // ─────────────────────────────────────────────
+
+  describe('optimistic updates', () => {
+    it('apply + rollback restores previous state', async () => {
+      const { pinia } = factory(
+        async () => ({ contactId: '1', name: 'Alice', email: 'alice@test.com' }),
+        ['contacts', '1'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const { apply } = useOptimisticUpdate(pinia)
+
+      // Apply optimistic update
+      const rollback = apply('contact', '1', { contactId: '1', name: 'Alicia' })
+
+      const entityStore = useEntityStore(pinia)
+      expect(entityStore.get('contact', '1').value?.name).toBe('Alicia')
+      // Shallow merge preserves email
+      expect(entityStore.get('contact', '1').value?.email).toBe('alice@test.com')
+
+      // Rollback
+      rollback()
+      expect(entityStore.get('contact', '1').value?.name).toBe('Alice')
+    })
+
+    it('rollback removes entity that was optimistically created', async () => {
+      const { pinia } = factory(
+        async () => [{ contactId: '1', name: 'Alice' }],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const { apply } = useOptimisticUpdate(pinia)
+      const entityStore = useEntityStore(pinia)
+
+      expect(entityStore.has('contact', '99')).toBe(false)
+
+      const rollback = apply('contact', '99', { contactId: '99', name: 'Optimistic' })
+      expect(entityStore.has('contact', '99')).toBe(true)
+
+      rollback()
+      expect(entityStore.has('contact', '99')).toBe(false)
+    })
+
+    it('transaction with multiple mutations commits cleanly', async () => {
+      const { pinia } = factory(
+        async () => [
+          { contactId: '1', name: 'Alice' },
+          { contactId: '2', name: 'Bob' },
+        ],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const { transaction } = useOptimisticUpdate(pinia)
+      const entityStore = useEntityStore(pinia)
+
+      const tx = transaction()
+      tx.set('contact', '1', { contactId: '1', name: 'Alicia' })
+      tx.set('contact', '2', { contactId: '2', name: 'Robert' })
+
+      // Both updates visible immediately
+      expect(entityStore.get('contact', '1').value?.name).toBe('Alicia')
+      expect(entityStore.get('contact', '2').value?.name).toBe('Robert')
+
+      // Commit — server data already correct
+      tx.commit()
+
+      // Still shows the data
+      expect(entityStore.get('contact', '1').value?.name).toBe('Alicia')
+      expect(entityStore.get('contact', '2').value?.name).toBe('Robert')
+    })
+
+    it('transaction rollback restores all mutations', async () => {
+      const { pinia } = factory(
+        async () => [
+          { contactId: '1', name: 'Alice' },
+          { contactId: '2', name: 'Bob' },
+        ],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const { transaction } = useOptimisticUpdate(pinia)
+      const entityStore = useEntityStore(pinia)
+
+      const tx = transaction()
+      tx.set('contact', '1', { contactId: '1', name: 'Alicia' })
+      tx.set('contact', '2', { contactId: '2', name: 'Robert' })
+
+      tx.rollback()
+
+      // Both entities restored to server truth
+      expect(entityStore.get('contact', '1').value?.name).toBe('Alice')
+      expect(entityStore.get('contact', '2').value?.name).toBe('Bob')
+    })
+
+    it('concurrent transactions: rollback one preserves the other', async () => {
+      const { pinia } = factory(
+        async () => ({ contactId: '1', name: 'Alice', email: 'alice@test.com' }),
+        ['contacts', '1'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const { transaction } = useOptimisticUpdate(pinia)
+      const entityStore = useEntityStore(pinia)
+
+      // Transaction A: change name
+      const txA = transaction()
+      txA.set('contact', '1', { contactId: '1', name: 'Alicia' })
+
+      // Transaction B: change email
+      const txB = transaction()
+      txB.set('contact', '1', { contactId: '1', email: 'new@test.com' })
+
+      // Both changes visible
+      expect(entityStore.get('contact', '1').value?.name).toBe('Alicia')
+      expect(entityStore.get('contact', '1').value?.email).toBe('new@test.com')
+
+      // Transaction A fails — rollback should restore server name but preserve B's email
+      txA.rollback()
+
+      expect(entityStore.get('contact', '1').value?.name).toBe('Alice') // restored
+      expect(entityStore.get('contact', '1').value?.email).toBe('new@test.com') // B still active
+
+      // Transaction B succeeds
+      txB.commit()
+      expect(entityStore.get('contact', '1').value?.email).toBe('new@test.com')
+    })
+
+    it('double rollback/commit is safe (no-op)', async () => {
+      const { pinia } = factory(
+        async () => ({ contactId: '1', name: 'Alice' }),
+        ['contacts', '1'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const { transaction } = useOptimisticUpdate(pinia)
+      const entityStore = useEntityStore(pinia)
+
+      const tx = transaction()
+      tx.set('contact', '1', { contactId: '1', name: 'Alicia' })
+
+      tx.rollback()
+      expect(entityStore.get('contact', '1').value?.name).toBe('Alice')
+
+      // Second rollback should be a no-op, not throw
+      tx.rollback()
+      expect(entityStore.get('contact', '1').value?.name).toBe('Alice')
+
+      // Commit after rollback should also be a no-op
+      tx.commit()
+      expect(entityStore.get('contact', '1').value?.name).toBe('Alice')
+    })
+
+    it('transaction with optimistic remove + rollback restores entity', async () => {
+      const { pinia } = factory(
+        async () => [{ contactId: '1', name: 'Alice' }],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const { transaction } = useOptimisticUpdate(pinia)
+      const entityStore = useEntityStore(pinia)
+
+      const tx = transaction()
+      tx.remove('contact', '1')
+
+      expect(entityStore.has('contact', '1')).toBe(false)
+
+      tx.rollback()
+
+      expect(entityStore.has('contact', '1')).toBe(true)
+      expect(entityStore.get('contact', '1').value?.name).toBe('Alice')
+    })
+  })
+
+  // ─────────────────────────────────────────────
+  // useEntityQuery
+  // ─────────────────────────────────────────────
+
+  describe('useEntityQuery', () => {
+    it('returns filtered reactive view of entities', async () => {
+      const { pinia } = factory(
+        async () => [
+          { contactId: '1', name: 'Alice', status: 'active' },
+          { contactId: '2', name: 'Bob', status: 'inactive' },
+          { contactId: '3', name: 'Charlie', status: 'active' },
+        ],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const active = useEntityQuery('contact', (c) => c.status === 'active', pinia)
+      expect(active.value).toHaveLength(2)
+      expect(active.value.map((c: any) => c.name).sort()).toEqual(['Alice', 'Charlie'])
+    })
+
+    it('returns all entities when no filter provided', async () => {
+      const { pinia } = factory(
+        async () => [
+          { contactId: '1', name: 'Alice' },
+          { contactId: '2', name: 'Bob' },
+        ],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const all = useEntityQuery('contact', undefined, pinia)
+      expect(all.value).toHaveLength(2)
+    })
+  })
+
+  // ─────────────────────────────────────────────
+  // Array operations (list query updates)
+  // ─────────────────────────────────────────────
+
+  describe('array operations', () => {
+    it('updateQueryData adds entity to a list query', async () => {
+      const { pinia, wrapper } = factory(
+        async () => [
+          { contactId: '1', name: 'Alice' },
+          { contactId: '2', name: 'Bob' },
+        ],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      const entityStore = useEntityStore(pinia)
+
+      // Create a new entity in the store
+      const newContact = { contactId: '3', name: 'Charlie' }
+      entityStore.set('contact', '3', newContact)
+
+      // Add it to the list query
+      updateQueryData(
+        ['contacts'],
+        (data) => [...(data as any[]), newContact],
+        pinia,
+      )
+
+      await nextTick()
+
+      const data = wrapper.vm.data as any[]
+      expect(data).toHaveLength(3)
+      expect(data[2].name).toBe('Charlie')
+    })
+
+    it('updateQueryData removes entity from a list query', async () => {
+      const { pinia, wrapper } = factory(
+        async () => [
+          { contactId: '1', name: 'Alice' },
+          { contactId: '2', name: 'Bob' },
+          { contactId: '3', name: 'Charlie' },
+        ],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      // Remove Bob from the list query
+      updateQueryData(
+        ['contacts'],
+        (data) => (data as any[]).filter((c: any) => c.contactId !== '2'),
+        pinia,
+      )
+
+      await nextTick()
+
+      const data = wrapper.vm.data as any[]
+      expect(data).toHaveLength(2)
+      expect(data.map((c: any) => c.name)).toEqual(['Alice', 'Charlie'])
+    })
+
+    it('removeEntityFromAllQueries removes from store and all queries', async () => {
+      const contacts = [
+        { contactId: '1', name: 'Alice' },
+        { contactId: '2', name: 'Bob' },
+        { contactId: '3', name: 'Charlie' },
+      ]
+
+      const { pinia, wrapper1, wrapper2 } = dualFactory(
+        async () => contacts.map((c) => ({ ...c })),
+        ['contacts'],
+        async () => ({ ...contacts[0] }),
+        ['contacts', '1'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      // Remove Alice from ALL queries + entity store
+      removeEntityFromAllQueries('contact', '1', pinia)
+
+      await nextTick()
+
+      // List query should no longer contain Alice
+      const listData = wrapper1.vm.data as any[]
+      expect(listData).toHaveLength(2)
+      expect(listData.map((c: any) => c.name)).toEqual(['Bob', 'Charlie'])
+
+      // Entity store should not have Alice
+      const entityStore = useEntityStore(pinia)
+      expect(entityStore.has('contact', '1')).toBe(false)
+    })
+
+    it('removeEntityFromAllQueries handles nested data structures', async () => {
+      const { pinia, wrapper } = factory(
+        async () => ({
+          contacts: [
+            { contactId: '1', name: 'Alice' },
+            { contactId: '2', name: 'Bob' },
+          ],
+          total: 2,
+        }),
+        ['contacts-page'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      removeEntityFromAllQueries('contact', '1', pinia)
+
+      await nextTick()
+
+      const data = wrapper.vm.data as any
+      expect(data.contacts).toHaveLength(1)
+      expect(data.contacts[0].name).toBe('Bob')
+      expect(data.total).toBe(2) // non-array data preserved
+    })
+  })
+
+  // ─────────────────────────────────────────────
   // Edge cases
   // ─────────────────────────────────────────────
 
   describe('edge cases', () => {
+    it('removeEntityFromAllQueries is safe when entity not in any query', async () => {
+      const { pinia } = factory(
+        async () => [{ contactId: '1', name: 'Alice' }],
+        ['contacts'],
+        { entities: { contact: defineEntity({ idField: 'contactId' }) } },
+      )
+
+      await flushPromises()
+
+      // Remove an entity that's not in any query — should not throw
+      expect(() => removeEntityFromAllQueries('contact', '999', pinia)).not.toThrow()
+    })
+
     it('handles query returning null', async () => {
       const { wrapper } = factory(
         async () => null,

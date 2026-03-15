@@ -7,10 +7,30 @@
  */
 
 // Plugin
-export { PiniaColadaNormalizer, useEntityStore, invalidateEntity, normalize, denormalize } from './plugin'
+export {
+  PiniaColadaNormalizer, useEntityStore, invalidateEntity,
+  updateQueryData, removeEntityFromAllQueries,
+  normalize, denormalize,
+} from './plugin'
 
 // Entity Store
 export { createEntityStore } from './store'
+
+// Composables (Phase 2: Real-Time)
+export {
+  onEntityAdded,
+  onEntityUpdated,
+  onEntityRemoved,
+  useOptimisticUpdate,
+  createCoalescer,
+} from './composables'
+export type { OptimisticTransaction } from './composables'
+
+// Composables (Phase 3: Performance & DX)
+export {
+  useEntityQuery,
+  createEntityIndex,
+} from './composables'
 
 // Types & Helpers
 export { defineEntity } from './types'

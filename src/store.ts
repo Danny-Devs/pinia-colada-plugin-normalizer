@@ -39,7 +39,24 @@ export function createEntityStore(): EntityStore {
   // Subscribers
   const listeners = new Set<{ fn: EntityListener; filter?: { entityType?: string } }>()
 
+  // Reference counts for GC — only tracked for entities that have been retain()ed.
+  // Entities created via direct set() (e.g., WebSocket) have no entry here
+  // and are immune to gc().
+  const refCounts = new Map<EntityKey, number>()
+
   // ── Helpers ─────────────────────────────────
+
+  /**
+   * Checks if incoming data would actually change the existing entity.
+   * Returns true if any incoming field differs from the existing value.
+   * Used to skip no-op merges and preserve referential identity.
+   */
+  function hasChangedFields(existing: EntityRecord, incoming: EntityRecord): boolean {
+    for (const key of Object.keys(incoming)) {
+      if (incoming[key] !== existing[key]) return true
+    }
+    return false
+  }
 
   function getTypeMap(entityType: string): Map<string, ShallowRef<EntityRecord>> {
     let typeMap = storage.get(entityType)
@@ -80,6 +97,9 @@ export function createEntityStore(): EntityStore {
       const previousData = existing?.value
 
       if (existing && previousData) {
+        // Skip merge if incoming fields are identical — preserves referential
+        // identity and prevents unnecessary reactivity triggers downstream.
+        if (!hasChangedFields(previousData, data)) return
         // Shallow merge — incoming data is merged on top of existing data.
         // This allows a detail query (with email) to enrich an entity
         // that was first stored by a list query (without email),
@@ -140,6 +160,8 @@ export function createEntityStore(): EntityStore {
         const previousData = existing?.value
 
         if (existing && previousData) {
+          // Skip no-op merges to preserve referential identity
+          if (!hasChangedFields(previousData, data)) continue
           existing.value = { ...previousData, ...data }
         } else if (existing) {
           existing.value = data
@@ -230,12 +252,52 @@ export function createEntityStore(): EntityStore {
       return () => { listeners.delete(entry) }
     },
 
+    retain(entityType, id) {
+      const key = toEntityKey(entityType, id)
+      refCounts.set(key, (refCounts.get(key) ?? 0) + 1)
+    },
+
+    release(entityType, id) {
+      const key = toEntityKey(entityType, id)
+      const current = refCounts.get(key)
+      if (current != null) {
+        refCounts.set(key, current - 1)
+      }
+    },
+
+    gc() {
+      // Collect keys to remove first, then process — avoids mutating
+      // refCounts during iteration (subscribers could call retain/release).
+      const toCollect: Array<{ key: EntityKey; entityType: string; id: string }> = []
+      for (const [key, count] of refCounts) {
+        if (count <= 0) {
+          const separatorIndex = key.indexOf(':')
+          toCollect.push({
+            key,
+            entityType: key.slice(0, separatorIndex),
+            id: key.slice(separatorIndex + 1),
+          })
+        }
+      }
+
+      const removed: string[] = []
+      for (const { key, entityType, id } of toCollect) {
+        refCounts.delete(key)
+        if (store.has(entityType, id)) {
+          store.remove(entityType, id)
+          removed.push(key)
+        }
+      }
+      return removed
+    },
+
     clear() {
       for (const [entityType, typeMap] of storage) {
         typeMap.clear()
         const version = getTypeVersion(entityType)
         version.value++
       }
+      refCounts.clear()
     },
 
     toJSON() {

@@ -122,6 +122,31 @@ export interface EntityStore {
     filter?: { entityType?: string },
   ): () => void
 
+  // ── Reference counting (GC support) ────────
+
+  /**
+   * Increment the reference count for an entity.
+   * Called by the plugin when a query extracts this entity.
+   * Entities created via direct `set()` (e.g., WebSocket) are untracked
+   * and will NOT be collected by `gc()`.
+   */
+  retain(entityType: string, id: string): void
+
+  /**
+   * Decrement the reference count for an entity.
+   * Called by the plugin when a query is removed or its entities change.
+   */
+  release(entityType: string, id: string): void
+
+  /**
+   * Remove entities with zero or negative reference counts.
+   * Only affects entities that have been `retain()`ed at least once —
+   * entities created via direct `set()` (never retained) are untouched.
+   *
+   * @returns Array of removed entity keys (e.g., ['contact:42', 'order:5'])
+   */
+  gc(): string[]
+
   // ── Lifecycle ───────────────────────────────
 
   /**
@@ -173,6 +198,23 @@ export interface EntityDefinition {
    * }
    */
   getId?: (entity: EntityRecord) => string | null | undefined
+
+  /**
+   * Custom merge function for this entity type.
+   * Called instead of the default shallow merge when updating an existing entity.
+   * If omitted, the default `{ ...existing, ...incoming }` merge is used.
+   *
+   * Use cases: pagination (array append), deep nested objects, counters, etc.
+   *
+   * @example
+   * // Append to a replies array instead of replacing it
+   * merge: (existing, incoming) => ({
+   *   ...existing,
+   *   ...incoming,
+   *   replies: [...(existing.replies as any[] || []), ...(incoming.replies as any[] || [])],
+   * })
+   */
+  merge?: (existing: EntityRecord, incoming: EntityRecord) => EntityRecord
 }
 
 /**
