@@ -1,0 +1,27 @@
+/**
+ * pinia-colada-plugin-normalizer
+ *
+ * Normalized entity caching plugin for Pinia Colada.
+ *
+ * @module pinia-colada-plugin-normalizer
+ */
+
+// Plugin
+export { PiniaColadaNormalizer, useEntityStore } from './plugin'
+
+// Entity Store
+export { createEntityStore } from './store'
+
+// Types & Helpers
+export { defineEntity } from './types'
+export type {
+  EntityStore,
+  EntityRecord,
+  EntityKey,
+  EntityEvent,
+  EntityDefinition,
+  EntityRef,
+  NormalizerPluginOptions,
+  NormalizerQueryOptions,
+  ReadonlyEntityMap,
+} from './types'
