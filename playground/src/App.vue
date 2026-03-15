@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import AppHeader from './components/AppHeader.vue'
 import ContactList from './components/ContactList.vue'
 import ContactDetail from './components/ContactDetail.vue'
@@ -9,16 +9,24 @@ import DataInspector from './components/DataInspector.vue'
 import FeaturesPage from './components/FeaturesPage.vue'
 import StressTestPage from './components/StressTestPage.vue'
 import { useDemo } from './composables/useDemo'
+import * as mockApi from './api/mock'
 
 const currentPage = ref('demo')
 const selectedId = ref<string | null>('1')
 const { normalized, entityWrites, rawUpdates, log, applyUpdate, resetDemo } = useDemo()
 const clicked = reactive(new Set<string>())
 
+// Re-reads fetchCount whenever log changes (log updates on every action)
+const apiCalls = computed(() => {
+  void log.length // track reactivity
+  return mockApi.fetchCount
+})
+
 function toggleMode() {
   normalized.value = !normalized.value
   selectedId.value = '1'
   clicked.clear()
+  mockApi.resetFetchCount()
   resetDemo()
 }
 
@@ -75,6 +83,7 @@ function activateDiana() {
             <button @click="activateDiana" :class="['action-btn', { applied: clicked.has('diana') }]" :disabled="clicked.has('diana')">Diana → active</button>
           </div>
         </div>
+        <span class="api-counter">API calls: {{ apiCalls }}</span>
       </div>
 
       <!-- Mode hint -->
@@ -215,6 +224,11 @@ body {
 .action-btn:hover { background: var(--accent-bg); }
 .action-btn.applied { background: var(--accent); color: #fff; cursor: default; opacity: 0.7; }
 .action-btn:disabled { pointer-events: none; }
+.api-counter {
+  font-family: monospace; font-size: 12px; font-weight: 600;
+  padding: 4px 10px; border-radius: 4px; white-space: nowrap;
+  background: var(--success-bg); color: var(--success);
+}
 .control-stats { flex-shrink: 0; }
 .mini-stat {
   font-family: monospace; font-size: 12px; font-weight: 500;

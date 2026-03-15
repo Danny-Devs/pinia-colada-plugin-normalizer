@@ -32,6 +32,10 @@ const ORIGINAL_DATA: Contact[] = [
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+/** Tracks how many API calls have been made. */
+export let fetchCount = 0
+export function resetFetchCount() { fetchCount = 0 }
+
 /** Update the server's data — simulates an external change. */
 export function updateServerData(contact: Contact) {
   serverData.set(contact.contactId, { ...contact })
@@ -49,13 +53,14 @@ export type ContactSummary = Omit<Contact, 'email'>
 
 /** GET /api/contacts — returns lightweight list (no email needed for list view) */
 export async function fetchContacts(): Promise<ContactSummary[]> {
+  fetchCount++
   await delay(300)
   return [...serverData.values()].map(({ email, ...rest }) => rest)
 }
 
-
 /** GET /api/contacts/:id — returns current server state */
 export async function fetchContact(contactId: string): Promise<Contact> {
+  fetchCount++
   await delay(200)
   const contact = serverData.get(contactId)
   if (!contact) throw new Error(`Contact ${contactId} not found`)
