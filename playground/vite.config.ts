@@ -1,18 +1,15 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-// In local dev, point to the plugin source for hot reload.
-// On Vercel (or when src/ doesn't exist), use the npm package.
-const localSrc = fileURLToPath(new URL('../src/index.ts', import.meta.url))
-const useLocalSource = existsSync(localSrc)
-
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [vue()],
   resolve: {
-    alias: useLocalSource
-      ? { 'pinia-colada-plugin-normalizer': localSrc }
-      : {},
+    alias:
+      // Only alias to local source in dev (not during production builds).
+      // Production builds use the npm package.
+      command === 'serve'
+        ? { 'pinia-colada-plugin-normalizer': fileURLToPath(new URL('../src/index.ts', import.meta.url)) }
+        : {},
   },
-})
+}))
