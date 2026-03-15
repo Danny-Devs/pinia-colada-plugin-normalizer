@@ -172,30 +172,17 @@ export interface EntityDefinition {
    * Use this for composite keys or computed IDs.
    * Takes precedence over `idField`.
    *
+   * Must return `null` or `undefined` for objects that are NOT this entity type.
+   * This is important when the same `getId` function could match unrelated objects.
+   *
    * @example
-   * // Composite key
-   * getId: (entity) => `${entity.orgId}-${entity.userId}`
+   * // Composite key — only match objects that have both fields
+   * getId: (entity) => {
+   *   if (entity.orgId == null || entity.userId == null) return undefined
+   *   return `${entity.orgId}-${entity.userId}`
+   * }
    */
-  getId?: (entity: EntityRecord) => string
-
-  /**
-   * Query key patterns that contain this entity type.
-   * Supports prefix matching.
-   *
-   * If not specified, the entity type is inferred from the response structure.
-   *
-   * Example: fromQueries: ["contacts", "contact/*"]
-   */
-  fromQueries?: string[]
-
-  /**
-   * Custom merge strategy for this entity type.
-   * By default, whole-entity replacement is used (recommended).
-   *
-   * Only use this if you have a specific reason to merge instead of replace.
-   * Vue's reactivity handles property-level diffing automatically with replacement.
-   */
-  merge?: (existing: EntityRecord, incoming: EntityRecord) => EntityRecord
+  getId?: (entity: EntityRecord) => string | null | undefined
 }
 
 /**

@@ -2,18 +2,25 @@
  * Pinia Colada Normalizer plugin.
  *
  * Hooks into Pinia Colada's query cache via $onAction subscriptions:
- * 1. 'extend' — initialize ext metadata with scope.run() (ShallowRef)
- * 2. 'setEntryState' — normalize on write via after() callback
+ * 1. 'extend' — replace entry.state with a customRef that normalizes on write
+ *    and denormalizes on read (the "customRef replacement" pattern).
  *
- * Integration surface: 2 action hooks + ext field.
- * Follows patterns from Eduardo's writing-plugins.md guide and the
- * dataUpdatedAt example (ShallowRef + scope.run + after).
+ * This eliminates the setEntryState after() hook entirely. Writes go through
+ * the customRef setter (normalize), reads go through the getter (denormalize).
+ * Transparent to all other plugins and application code.
+ *
+ * SSR-safe: entity store is scoped per Pinia instance via defineStore.
+ *
+ * Integration surface: 1 action hook (extend) + ext field.
+ * Follows the delay plugin's pattern of replacing entry properties with customRef.
+ * Eduardo confirmed this approach in Discussion #531.
  *
  * @module pinia-colada-plugin-normalizer
  */
 
-import { shallowRef } from 'vue'
+import { customRef, shallowRef } from 'vue'
 import type { PiniaColadaPlugin } from '@pinia/colada'
+import { defineStore } from 'pinia'
 import type {
   EntityRecord,
   EntityRef,
@@ -27,11 +34,38 @@ import { ENTITY_REF_MARKER, NORM_META_KEY } from './types'
 import { createEntityStore } from './store'
 
 // ─────────────────────────────────────────────
+// SSR-safe entity store via defineStore
+// ─────────────────────────────────────────────
+
+const NORMALIZER_STORE_ID = '_pc_normalizer'
+
+/**
+ * Pinia store that scopes the entity store per Pinia instance.
+ * This prevents SSR cross-request contamination — each app gets its own store.
+ * @internal
+ */
+const useNormalizerStore = /* @__PURE__ */ defineStore(NORMALIZER_STORE_ID, () => {
+  let store: EntityStore = createEntityStore()
+  function setStore(s: EntityStore) { store = s }
+  function getStore() { return store }
+  return { getStore, setStore }
+})
+
+// ─────────────────────────────────────────────
 // Plugin Factory
 // ─────────────────────────────────────────────
 
 /**
  * Creates the normalizer plugin for Pinia Colada.
+ *
+ * Architecture: customRef replacement pattern.
+ * - In the `extend` hook, entry.state is replaced with a customRef.
+ * - The setter normalizes incoming data (extracts entities, stores them,
+ *   saves EntityRefs internally).
+ * - The getter denormalizes on read (replaces EntityRefs with live store data).
+ * - `setEntryState` calls `entry.state.value = state` which hits the setter.
+ * - `useQuery` reads `entry.state.value` which hits the getter.
+ * - All transparent to other plugins and application code.
  *
  * @example
  * ```typescript
@@ -55,93 +89,111 @@ export function PiniaColadaNormalizer(
   const {
     entities: entityDefs = {},
     defaultIdField = 'id',
-    store = createEntityStore(),
+    store: userStore,
     autoNormalize = false,
   } = options
 
-  // Expose the store instance so useEntityStore() can access it
-  _pluginStore = store
+  return ({ queryCache, pinia, scope }) => {
+    // Get the per-Pinia-instance normalizer store (SSR-safe)
+    const normalizerStore = useNormalizerStore(pinia)
+    if (userStore) {
+      normalizerStore.setStore(userStore)
+    }
+    const entityStoreInstance = normalizerStore.getStore()
 
-  return ({ queryCache, scope }) => {
-    queryCache.$onAction(({ name, args, after }) => {
-      // ── extend: initialize ext metadata ──────────
+    queryCache.$onAction(({ name, args }) => {
+      // ── extend: initialize ext + customRef replacement ──
       // Called once per entry creation. Must use scope.run() for reactive refs.
       // Must define ALL ext keys here (cannot add new keys later).
+      //
+      // We replace entry.state with a customRef that:
+      // - setter: normalizes incoming data (extract entities → store → save refs)
+      // - getter: denormalizes on read (replace EntityRefs with live entity data)
+      //
+      // This follows the delay plugin's pattern of replacing entry.asyncStatus.
       if (name === 'extend') {
         const [entry] = args
         scope.run(() => {
+          // Initialize ext metadata
           entry.ext[NORM_META_KEY] = shallowRef<NormMeta>({
             isNormalized: false,
             entityKeys: [],
           })
-        })
-      }
 
-      // ── setEntryState: normalize on write ────────
-      // Uses after() callback following Eduardo's dataUpdatedAt pattern.
-      // We normalize AFTER the state is set, then immediately update it
-      // with the normalized version.
-      if (name === 'setEntryState') {
-        const [entry, state] = args
+          // Check if this query should be normalized
+          const shouldNormalize = entry.options?.normalize ?? autoNormalize
+          if (!shouldNormalize) return
 
-        // Only normalize successful responses with data
-        if (state.status !== 'success' || state.data == null) return
+          // Capture the current state value — this becomes our internal storage.
+          // The customRef manages this directly instead of delegating to the
+          // original ShallowRef.
+          let rawState = entry.state.value
 
-        // Check per-query option first, then global setting
-        const shouldNormalize = entry.options?.normalize ?? autoNormalize
-        if (!shouldNormalize) return
+          // Replace entry.state with a customRef that normalizes on write
+          // and denormalizes on read.
+          entry.state = customRef((track, trigger) => ({
+            get() {
+              track()
+              // Denormalize on read: replace EntityRefs with live store data
+              if (rawState.status === 'success' && rawState.data != null) {
+                return {
+                  ...rawState,
+                  data: denormalize(rawState.data, entityStoreInstance),
+                }
+              }
+              return rawState
+            },
+            set(newState) {
+              // Normalize on write: extract entities, replace with refs
+              if (newState.status === 'success' && newState.data != null) {
+                const result = normalize(newState.data, entityDefs, defaultIdField)
+                if (result.entities.length > 0) {
+                  // Write entities to the store (batch for efficiency)
+                  entityStoreInstance.setMany(result.entities)
 
-        after(() => {
-          // Normalize the data: extract entities, replace with references
-          const result = normalize(state.data, entityDefs, defaultIdField)
+                  // Update ext metadata via ShallowRef .value
+                  entry.ext[NORM_META_KEY].value = {
+                    isNormalized: true,
+                    entityKeys: result.entities.map(
+                      (e) => `${e.entityType}:${e.id}`,
+                    ),
+                  }
 
-          if (result.entities.length > 0) {
-            // Write entities to the store (batch for efficiency)
-            store.setMany(result.entities)
-
-            // Update ext metadata via ShallowRef .value
-            entry.ext[NORM_META_KEY].value = {
-              isNormalized: true,
-              entityKeys: result.entities.map(
-                (e) => `${e.entityType}:${e.id}`,
-              ),
-            }
-
-            // Update entry state with normalized data (references instead of entities)
-            // This triggers a second state update, but it's necessary to follow
-            // the after() pattern correctly.
-            entry.state.value = {
-              ...entry.state.value,
-              data: result.normalized,
-            }
-          }
+                  rawState = { ...newState, data: result.normalized }
+                } else {
+                  rawState = newState
+                }
+              } else {
+                rawState = newState
+              }
+              trigger()
+            },
+          })) as typeof entry.state
         })
       }
 
       // ── remove: cleanup ──────────────────────────
+      // Entities persist in the store even after query entries are GC'd.
+      // This is intentional for WebSocket scenarios where entities
+      // outlive individual queries.
+      // Future: optional reference counting for entity GC.
       if (name === 'remove') {
-        // Entities persist in the store even after query entries are GC'd.
-        // This is intentional for WebSocket scenarios where entities
-        // outlive individual queries.
-        // Future: optional reference counting for entity GC.
+        // cleanup hook placeholder
       }
     })
   }
 }
 
 // ─────────────────────────────────────────────
-// Entity Store Access (Issue #9 fix)
+// Entity Store Access (SSR-safe)
 // ─────────────────────────────────────────────
 
 /**
- * Module-level store reference, set during plugin initialization.
- * @internal
- */
-let _pluginStore: EntityStore | undefined
-
-/**
  * Returns the entity store instance used by the normalizer plugin.
+ * SSR-safe: uses defineStore to scope per Pinia instance.
  * Must be called after the plugin is installed.
+ *
+ * In component context, Pinia is available via inject (auto-detected).
  *
  * @example
  * ```typescript
@@ -158,13 +210,9 @@ let _pluginStore: EntityStore | undefined
  * ```
  */
 export function useEntityStore(): EntityStore {
-  if (!_pluginStore) {
-    throw new Error(
-      '[pinia-colada-plugin-normalizer] useEntityStore() called before plugin installation. '
-      + 'Make sure PiniaColadaNormalizer is installed via PiniaColada plugins option.',
-    )
-  }
-  return _pluginStore
+  // In component context, Pinia is available via inject (auto-detected by defineStore)
+  const normalizerStore = useNormalizerStore()
+  return normalizerStore.getStore()
 }
 
 // ─────────────────────────────────────────────
@@ -297,40 +345,66 @@ function identifyEntity(
   return null
 }
 
+// ─────────────────────────────────────────────
+// Denormalization Engine (recursive)
+// ─────────────────────────────────────────────
+
 /**
- * Denormalizes data by replacing EntityRef references with live entity data
- * from the store.
+ * Denormalizes data by recursively replacing EntityRef references with live
+ * entity data from the store.
  *
- * This is used on the read path to reconstruct the original data shape
- * with reactive entity data.
+ * This is used on the read path (customRef getter) to reconstruct the original
+ * data shape with reactive entity data. Entities in the store may themselves
+ * contain EntityRefs (nested entities), so denormalization must be recursive.
+ *
+ * Uses a WeakSet for circular reference protection.
  */
 export function denormalize(
   data: unknown,
   store: EntityStore,
 ): unknown {
+  const visited = new WeakSet<object>()
+  return walkAndDenormalize(data, store, visited)
+}
+
+function walkAndDenormalize(
+  data: unknown,
+  store: EntityStore,
+  visited: WeakSet<object>,
+): unknown {
   if (data == null || typeof data !== 'object') {
     return data
   }
 
+  // Circular reference protection
+  if (visited.has(data as object)) {
+    return data
+  }
+  visited.add(data as object)
+
+  // Arrays — walk each element
   if (Array.isArray(data)) {
-    return data.map((item) => denormalize(item, store))
+    return data.map((item) => walkAndDenormalize(item, store, visited))
   }
 
   // Check if this is an entity reference (Symbol-based, Issue #13 fix)
   const record = data as Record<string | symbol, unknown>
   if (isEntityRef(record)) {
-    // Return the live reactive entity from the store
-    return store.get(record.entityType as string, record.id as string).value
+    // Resolve the reference to live entity data from the store
+    const entity = store.get(record.entityType as string, record.id as string).value
+    if (entity == null) return undefined
+    // Recursively denormalize the entity's fields (they may contain refs too)
+    return walkAndDenormalize(entity, store, visited)
   }
 
   // Walk children
   const result: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(record)) {
-    result[key] = denormalize(value, store)
+    result[key] = walkAndDenormalize(value, store, visited)
   }
   return result
 }
 
-function isEntityRef(obj: Record<string | symbol, unknown>): obj is EntityRef {
+function isEntityRef(obj: Record<string | symbol, unknown>): boolean {
   return obj[ENTITY_REF_MARKER] === true
 }

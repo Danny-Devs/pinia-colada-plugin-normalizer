@@ -80,10 +80,14 @@ export function createEntityStore(): EntityStore {
       const existing = typeMap.get(id)
       const previousData = existing?.value
 
-      if (existing) {
-        // Whole-entity replacement — Vue's shallowRef triggers watchers,
-        // and downstream computed properties only re-run if their
-        // specific dependencies changed.
+      if (existing && previousData) {
+        // Shallow merge — incoming data is merged on top of existing data.
+        // This allows a detail query (with email) to enrich an entity
+        // that was first stored by a list query (without email),
+        // without the list query later overwriting the email field.
+        // Vue's shallowRef triggers watchers on assignment.
+        existing.value = { ...previousData, ...data }
+      } else if (existing) {
         existing.value = data
       } else {
         // New entity
@@ -112,7 +116,9 @@ export function createEntityStore(): EntityStore {
         const existing = typeMap.get(id)
         const previousData = existing?.value
 
-        if (existing) {
+        if (existing && previousData) {
+          existing.value = { ...previousData, ...data }
+        } else if (existing) {
           existing.value = data
         } else {
           typeMap.set(id, shallowRef(data))
@@ -191,7 +197,8 @@ export function createEntityStore(): EntityStore {
     },
 
     has(entityType, id) {
-      return storage.get(entityType)?.has(id) ?? false
+      const ref = storage.get(entityType)?.get(id)
+      return ref != null && ref.value !== undefined
     },
 
     query<T>(queryFn: (entities: ReadonlyEntityMap) => T): ComputedRef<T> {
@@ -263,7 +270,8 @@ export function createEntityStore(): EntityStore {
     },
 
     has(entityType, id) {
-      return storage.get(entityType)?.has(id) ?? false
+      const ref = storage.get(entityType)?.get(id)
+      return ref != null && ref.value !== undefined
     },
 
     *keys() {

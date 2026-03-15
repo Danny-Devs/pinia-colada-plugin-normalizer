@@ -7,7 +7,7 @@
  */
 
 // Plugin
-export { PiniaColadaNormalizer, useEntityStore } from './plugin'
+export { PiniaColadaNormalizer, useEntityStore, normalize, denormalize } from './plugin'
 
 // Entity Store
 export { createEntityStore } from './store'
