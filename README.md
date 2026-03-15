@@ -11,7 +11,7 @@ Normalized entity caching plugin for [Pinia Colada](https://github.com/posva/pin
 Store each entity **once**. Update it in one place, every query sees the change. No more stale data from missed cache invalidations.
 
 - **Transparent** — uses Vue's `customRef` to intercept reads/writes. Your app code doesn't know normalization exists.
-- **Minimal** — ~1,900 LOC, zero runtime dependencies. Just Vue + Pinia Colada.
+- **Minimal** — ~2,400 LOC, zero runtime dependencies. Just Vue + Pinia Colada.
 - **Type-safe** — optional `EntityRegistry` for end-to-end typed entity access across the entire API.
 - **Extensible** — swappable `EntityStore` interface for custom backends (IndexedDB, SQLite+WASM).
 
@@ -134,19 +134,67 @@ tx.set("order", "5", { status: "confirmed" });
 // On failure: tx.rollback() — restores server truth, replays other active transactions
 ```
 
+## Cache Redirects (Zero-Spinner Navigation)
+
+Navigate from a list to a detail page with **zero loading spinner** — if the entity was already fetched by a list query, the detail page shows it instantly while the full data loads in the background.
+
+### Automatic (convention-based)
+
+```typescript
+PiniaColadaNormalizer({
+  entities: { contact: defineEntity({ idField: "contactId" }) },
+  autoRedirect: true, // ← one flag
+});
+
+// Any query with key ['contact', id] auto-serves from cache:
+const { data, isPlaceholderData } = useQuery({
+  key: ["contact", id],
+  query: () => fetchContact(id),
+  normalize: true,
+});
+// data is available INSTANTLY if contact was in a prior list query.
+// isPlaceholderData is true until the real fetch completes.
+```
+
+The convention: if a query key is `[registeredEntityType, id]` (exactly 2 segments, first matches an entity in your config), the plugin auto-injects `placeholderData` from the entity store. List queries (1 segment) and nested resources (3+ segments) are skipped.
+
+Per-query overrides:
+
+```typescript
+// Disable for a specific query:
+useQuery({ key: ["contact", id], ..., redirect: false });
+
+// Custom mapping for non-standard keys:
+useQuery({ key: ["dashboard-contact", id], ..., redirect: { entityType: "contact" } });
+```
+
+### Manual (composable)
+
+For full control, use `useCachedEntity` directly:
+
+```typescript
+import { useCachedEntity } from "pinia-colada-plugin-normalizer";
+
+const { data } = useQuery({
+  key: ["contact", id],
+  query: () => fetchContact(id),
+  placeholderData: useCachedEntity("contact", () => id),
+});
+```
+
 ## Array Operations
 
 Add or remove entities from list queries without refetching:
 
 ```typescript
-import { updateQueryData, removeEntityFromAllQueries } from "pinia-colada-plugin-normalizer";
+import { updateQueryData, deleteEntity } from "pinia-colada-plugin-normalizer";
 
 // Add to a specific list query:
 entityStore.set("contact", "99", newContact);
 updateQueryData(["contacts"], (data) => [...(data as any[]), newContact]);
 
 // Remove from ALL queries + entity store (one call):
-removeEntityFromAllQueries("contact", "42");
+deleteEntity("contact", "42");
 ```
 
 ## Real-Time Hooks
@@ -199,12 +247,13 @@ ws.on("ENTITY_STALE", ({ key }) => coalescer.add(key));
 
 Creates the plugin.
 
-| Option           | Type                               | Default   | Description                         |
-| ---------------- | ---------------------------------- | --------- | ----------------------------------- |
-| `entities`       | `Record<string, EntityDefinition>` | `{}`      | Entity type configurations          |
-| `defaultIdField` | `string`                           | `'id'`    | Default ID field for auto-detection |
-| `store`          | `EntityStore`                      | in-memory | Custom storage backend              |
-| `autoNormalize`  | `boolean`                          | `false`   | Normalize all queries by default    |
+| Option           | Type                               | Default   | Description                                    |
+| ---------------- | ---------------------------------- | --------- | ---------------------------------------------- |
+| `entities`       | `Record<string, EntityDefinition>` | `{}`      | Entity type configurations                     |
+| `defaultIdField` | `string`                           | `'id'`    | Default ID field for auto-detection            |
+| `store`          | `EntityStore`                      | in-memory | Custom storage backend                         |
+| `autoNormalize`  | `boolean`                          | `false`   | Normalize all queries by default               |
+| `autoRedirect`   | `boolean`                          | `false`   | Auto-serve cached entities as placeholder data |
 
 ### `defineEntity<T>(config)`
 
@@ -228,9 +277,13 @@ Refetch all active queries referencing the given entity.
 
 Update a query's data directly. Updater receives denormalized data, result is re-normalized.
 
-### `removeEntityFromAllQueries(entityType, id, pinia?)`
+### `deleteEntity(entityType, id, pinia?)`
 
 Remove an entity from all normalized queries and the entity store.
+
+### `useCachedEntity(entityType, id, pinia?)`
+
+Returns a `placeholderData`-compatible function that serves cached entities instantly. See [Cache Redirects](#cache-redirects-zero-spinner-navigation).
 
 ### `useOptimisticUpdate(pinia?)`
 
