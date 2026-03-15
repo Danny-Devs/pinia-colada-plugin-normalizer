@@ -44,6 +44,7 @@
   ],
   "scripts": {
     "build": "tsdown",
+    "dev": "cd playground && npx vite",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

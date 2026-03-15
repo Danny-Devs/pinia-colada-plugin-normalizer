@@ -18,11 +18,13 @@ For WebSocket-heavy apps where the server pushes entity updates, you want a sing
 
 ## Solution
 
-A normalization plugin that:
+A normalization plugin that uses Vue's `customRef` to intercept both reads and writes transparently:
 
-1. **On write:** Intercepts query responses via `$onAction('setEntryState')` + `after()` callback, extracts entities (things with IDs), stores them in a shared entity store, replaces them with Symbol-marked references in the query cache
-2. **On read:** Denormalizes references back into full objects. Vue's reactive dependency tracking propagates changes automatically
-3. **WebSocket integration:** `useEntityStore()` composable provides direct entity store access. Events write directly to the entity store. All views update. No invalidation needed.
+1. **On write:** When `setEntryState` writes `entry.state.value = newState`, the customRef **setter** fires — extracts entities, stores them in a shared entity store, saves EntityRef markers internally
+2. **On read:** When `useQuery` reads `entry.state.value.data`, the customRef **getter** fires — replaces EntityRefs with live reactive entity data from the store
+3. **WebSocket integration:** `useEntityStore()` composable provides direct entity store access. Events write directly to the entity store. All views update via Vue's dependency tracking. No invalidation needed.
+
+The customRef replacement follows the delay plugin's pattern (which replaces `entry.asyncStatus`). Eduardo confirmed this approach for `entry.state` in Discussion #531.
 
 ## Architecture
 
@@ -31,19 +33,23 @@ A normalization plugin that:
                     │      Pinia Colada Cache           │
                     │   (stale tracking, GC, dedup)     │
                     │                                   │
-                    │  entry.state.data = {             │
-                    │    [Symbol]: true,                 │  ← EntityRef (Symbol marker)
-                    │    entityType: 'contact',          │
-                    │    id: '42',                       │
-                    │    metadata: { page: 1 }           │  ← non-entity data stays here
-                    │  }                                │
+                    │  entry.state = customRef({        │
+                    │    set(state):                     │  ← NORMALIZE on write
+                    │      extract entities → store      │
+                    │      save EntityRefs internally    │
+                    │    get():                          │  ← DENORMALIZE on read
+                    │      replace EntityRefs with       │
+                    │      live entity store data        │
+                    │  })                               │
                     │  entry.ext[NORM_META_KEY] =        │
                     │    ShallowRef<NormMeta>            │  ← plugin metadata via ext
                     └──────────────┬────────────────────┘
-                                   │ references
+                                   │ reactive dependency
                     ┌──────────────▼────────────────────┐
                     │        EntityStore                 │
                     │   (flat, keyed by type+id)         │
+                    │   scoped per Pinia instance        │
+                    │   (SSR-safe via defineStore)       │
                     │                                   │
                     │  'contact:42' → ShallowRef({      │
                     │    id: 42, name: 'Alice' })        │  ← ONE copy, reactive
@@ -127,10 +133,10 @@ Breaks on real-world APIs with non-standard ID fields (`contactId`, `_id`, `uuid
 
 Following Eduardo's `writing-plugins.md` guide exactly:
 
-1. **`$onAction('extend')`** — initialize `ext[NORM_META_KEY]` as `ShallowRef<NormMeta>` inside `scope.run()`
-2. **`$onAction('setEntryState')` + `after()`** — normalize data after state is set, following the `dataUpdatedAt` example pattern
-3. **`ext` field** — per-entry normalization metadata via Symbol key (following `auto-refetch` plugin's `REFETCH_TIMEOUT_KEY` pattern)
-4. **Module augmentation** — `declare module '@pinia/colada'` extending `UseQueryOptions`, `UseQueryOptionsGlobal`, `UseQueryEntryExtensions`
+1. **`$onAction('extend')` + `scope.run()`** — replace `entry.state` with a `customRef` that normalizes on write (setter) and denormalizes on read (getter). Also initializes `ext[NORM_META_KEY]` as `ShallowRef<NormMeta>`. This follows the delay plugin's pattern of replacing `entry.asyncStatus` with a `customRef`, confirmed by Eduardo for `entry.state` in Discussion #531.
+2. **`ext` field** — per-entry normalization metadata via Symbol key (following `auto-refetch` plugin's `REFETCH_TIMEOUT_KEY` pattern)
+3. **Module augmentation** — `declare module '@pinia/colada'` extending `UseQueryOptions`, `UseQueryOptionsGlobal`, `UseQueryEntryExtensions`
+4. **`defineStore` for SSR safety** — entity store scoped per Pinia instance, not module-level singleton. Each SSR request gets its own store automatically.
 
 ### Safety measures
 
@@ -230,32 +236,32 @@ The plugin doesn't care where data comes from:
 
 | Plugin | Interaction | Status |
 |--------|------------|--------|
-| `@pinia/colada-plugin-delay` | No conflict — delays `asyncStatus`, we modify `state.data` | ✅ Compatible |
-| `@pinia/colada-plugin-retry` | No conflict — retries `fetch`, we hook `setEntryState` | ✅ Compatible |
-| `@pinia/colada-plugin-auto-refetch` | No conflict — schedules refetches, we normalize responses | ✅ Compatible |
-| `@pinia/colada-plugin-cache-persister` | **Conflict** — persister serializes EntityRef markers, not real data | ⚠️ Phase 4 |
+| `@pinia/colada-plugin-delay` | No conflict — delays `asyncStatus`, we replace `state` with customRef. Both use the same `extend` hook pattern. | ✅ Compatible |
+| `@pinia/colada-plugin-retry` | No conflict — retries `fetch`, we intercept state via customRef | ✅ Compatible |
+| `@pinia/colada-plugin-auto-refetch` | No conflict — schedules refetches, our customRef normalizes/denormalizes transparently | ✅ Compatible |
+| `@pinia/colada-plugin-cache-persister` | **Interaction** — persister reads `entry.state.value` which hits our getter (denormalized data). Persister will serialize real data, not EntityRefs. This is **correct behavior** — the persister sees the same data as components. | ✅ Compatible |
 
-### Cache-persister strategy (Phase 4)
+### Cache-persister compatibility (resolved)
 
-The cache-persister serializes `entry.state.value` which after normalization contains EntityRef markers instead of real data. Options:
-1. Serialize the entity store separately (via `entityStore.toJSON()`)
-2. Hook into persister's serialization to denormalize before save
-3. Persist entity store via its own storage backend (IndexedDB/SQLite)
+With the customRef approach, the cache-persister reads `entry.state.value` which triggers our getter — returning denormalized (real) data. The persister serializes what it sees, which is the full data. On restore, the data flows through our setter, which re-normalizes it into the entity store. **No special handling needed.** This is a major advantage of the customRef pattern over the old `after()` approach.
 
 ## Roadmap
 
 ### Phase 1: Core (MVP)
 - [x] Entity store (in-memory, reactive Map, ShallowRef per entity)
-- [x] Normalize on write (`after()` callback, Symbol-based EntityRef)
-- [ ] Denormalize on read (customRef interception — transparent to consumers)
+- [x] Normalize on write (customRef setter, Symbol-based EntityRef)
+- [x] Denormalize on read (customRef getter — transparent to consumers)
 - [x] `defineEntity()` config for non-standard APIs
 - [x] Opt-in per query via `normalize` option (module augmentation)
 - [x] Hybrid storage (entities normalized, hierarchies left as-is)
-- [x] `useEntityStore()` composable for direct access
-- [x] Circular reference protection
-- [ ] Tests (Vitest)
-- [ ] Package scaffolding (tsdown, package.json)
-- [ ] Proof-of-concept demo
+- [x] `useEntityStore()` composable for direct access (SSR-safe via defineStore)
+- [x] Circular reference protection (normalize + denormalize)
+- [x] SSR-safe: entity store scoped per Pinia instance via defineStore
+- [x] Tests (Vitest) — 43 passing
+- [x] Package scaffolding (tsdown, package.json)
+- [x] Proof-of-concept demo (playground with contacts)
+- [ ] Denormalize caching / structural sharing (avoid new objects every read)
+- [ ] Integration tests (actual Pinia Colada plugin + useQuery round-trip)
 - [ ] Post update in Discussion #531
 
 ### Phase 2: Real-Time
@@ -271,11 +277,10 @@ The cache-persister serializes `entry.state.value` which after normalization con
 - TypeScript type inference for entity schemas
 
 ### Phase 4: Persistence & Scale
-- Cache-persister compatibility strategy
 - Swappable persistence backends via EntityStore interface
 - IndexedDB + Dexie adapter (quick offline)
 - SQLite + WASM + OPFS adapter (full query planner, IVM via triggers)
-- Hydration/dehydration for SSR
+- Hydration/dehydration for SSR (entity store toJSON/hydrate already implemented)
 
 ### Phase 5: Moonshot
 - cr-sqlite integration (conflict-free multi-device sync)
@@ -322,9 +327,15 @@ The cache-persister serializes `entry.state.value` which after normalization con
 | **Apollo InMemoryCache** | GraphQL-only, deep merge, type policies |
 | **TanStack DB** | Full client-side database with IVM + query planner |
 
-## Open Questions
+## Open Questions (Resolved & Remaining)
 
-1. **Read path**: Should transparent denormalization use `customRef` on `entry.state` (like delay does with `asyncStatus`) or a `computed` wrapper? Need to prototype both.
+### Resolved
+1. ~~**Read path**: customRef vs computed?~~ **RESOLVED: customRef on `entry.state`.** Verified from Pinia Colada internals that `entry.state` is a `ShallowRef` on a `markRaw` plain object — replaceable. `setEntryState` writes to `.value` (hits custom setter). `useQuery` reads `.value` (hits custom getter). Eduardo confirmed in Discussion #531.
+2. ~~**SSR safety**: module singleton breaks SSR~~ **RESOLVED: `defineStore('_pc_normalizer')`.** Entity store scoped per Pinia instance. Each SSR request creates a fresh Pinia → fresh entity store. Follows the same pattern as `useQueryCache` (`defineStore('_pc_query')`).
+3. ~~**Cache-persister conflict**: persister would serialize EntityRefs~~ **RESOLVED: not a problem with customRef.** Persister reads `entry.state.value` → hits getter → gets denormalized data. Serializes real data. On restore, data flows through setter → re-normalizes. Zero special handling.
+
+### Remaining
+1. **Denormalize caching / structural sharing**: Every read creates new objects. For large datasets, this could cause unnecessary re-renders. Need structural sharing (return same object reference if entity hasn't changed).
 2. **Pagination**: How does `defineEntity` interact with infinite scroll where entities arrive in pages?
-3. **Denormalize caching**: Structural sharing to avoid creating new objects every read (Issue #8 from Wave 1 review)
-4. **Danny's three-way sync code**: Review when available on work laptop — will inform Phase 2 optimistic update design
+3. **Danny's three-way sync code**: Review when available on work laptop — will inform Phase 2 optimistic update design
+4. **Integration tests**: Need tests that exercise the full Pinia Colada plugin round-trip (useQuery → fetch → customRef normalize → read → denormalize → display)

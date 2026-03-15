@@ -91,8 +91,6 @@ Configure an entity type:
 |--------|------|---------|-------------|
 | `idField` | `string` | `'id'` | Field containing the entity ID |
 | `getId` | `(entity) => string` | — | Custom ID extraction (for composite keys) |
-| `fromQueries` | `string[]` | — | Query key patterns containing this type |
-| `merge` | `(existing, incoming) => entity` | replace | Custom merge strategy |
 
 ### `useEntityStore()`
 
@@ -111,9 +109,13 @@ The storage backend is swappable. Default is an in-memory reactive Map. The inte
 
 ## How It Works
 
-1. **On write:** Intercepts query responses, extracts entities (objects matching `defineEntity` configs or with `__typename` + `id`), stores them in the entity store, replaces them with references
-2. **On read:** Denormalizes references back into full objects with live reactive data
-3. **WebSocket:** `useEntityStore().set()` writes directly — Vue reactivity propagates to all queries
+Uses Vue's `customRef` to transparently intercept both reads and writes on `entry.state`:
+
+1. **On write:** When Pinia Colada sets query state, the customRef **setter** fires — extracts entities (objects matching `defineEntity` configs or with `__typename` + `id`), stores them in the entity store, saves references internally
+2. **On read:** When components access query data, the customRef **getter** fires — replaces references with live reactive entity data from the store
+3. **WebSocket:** `useEntityStore().set()` writes directly to the entity store — Vue reactivity propagates to all queries that reference that entity
+
+This approach follows the [delay plugin](https://github.com/posva/pinia-colada/tree/main/plugins/delay)'s pattern of replacing entry properties with `customRef` during the `extend` hook. SSR-safe via `defineStore` scoping.
 
 ## License
 

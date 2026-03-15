@@ -86,10 +86,20 @@ Each entry in the `_pc_query` Pinia store contains:
 | Pattern | Source | Our usage |
 |---------|--------|-----------|
 | Factory function | All official plugins | `PiniaColadaNormalizer(options)` |
-| `$onAction('extend')` + `scope.run()` | delay, dataUpdatedAt example | Initialize `ext[NORM_META_KEY]` as `ShallowRef` |
-| `$onAction('setEntryState')` + `after()` | dataUpdatedAt example | Normalize data post-state-set |
+| `$onAction('extend')` + `scope.run()` | delay, dataUpdatedAt example | Initialize `ext[NORM_META_KEY]` as `ShallowRef`, replace `entry.state` with `customRef` |
+| `customRef` replacement of entry property | delay plugin (`entry.asyncStatus`) | Replace `entry.state` with customRef that normalizes on set, denormalizes on get |
+| `defineStore` for plugin state | query cache (`_pc_query`), mutation cache | `_pc_normalizer` store scopes entity store per Pinia instance (SSR-safe) |
 | Symbol ext keys | auto-refetch's `REFETCH_TIMEOUT_KEY` | `NORM_META_KEY`, `ENTITY_REF_MARKER` |
 | Module augmentation | All official plugins | `UseQueryOptions`, `UseQueryEntryExtensions` |
+
+### Key architectural insight (verified from internals)
+
+**Why customRef works for `entry.state`:**
+- `entry.state` is a `ShallowRef` on a `markRaw` plain object (query-store.ts:303-306) — replaceable
+- `setEntryState` is the ONLY write site: `entry.state.value = state` (query-store.ts:783) — hits custom setter
+- `useQuery` reads via `entry.value.state.value` (use-query.ts:199) — hits custom getter
+- The entry object is not frozen/sealed — property reassignment works
+- Eduardo confirmed this approach in Discussion #531: "I think so, yes. It should work out nicely because `state` is the source of truth"
 
 ## Pinia Colada vs TanStack Query
 
