@@ -83,7 +83,7 @@ function activateDiana() {
           With normalization, each entity is stored once. Update it anywhere and both views reflect the change instantly.
         </template>
         <template v-else>
-          Without normalization, each query stores its own copy. Update one and the others go stale. You need to manually invalidate every query that might contain this entity.
+          Without normalization, each query stores its own copy. Update one and the others go stale unless you manually invalidate them.
         </template>
       </div>
 
