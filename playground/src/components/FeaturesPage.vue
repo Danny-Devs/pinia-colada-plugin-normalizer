@@ -108,6 +108,7 @@ function triggerRemove() {
 // 3. ARRAY OPERATIONS (prefix: arr-)
 // ═══════════════════════════════════════════════
 let arrNextId = 3
+const arrFetchCount = ref(0)
 const arrSeed = [
   { contactId: 'arr-1', name: 'Dana Kim', role: 'Engineer', status: 'active' },
   { contactId: 'arr-2', name: 'Eli Torres', role: 'PM', status: 'active' },
@@ -117,7 +118,10 @@ for (const c of arrSeed) entityStore.set('contact', c.contactId, { ...c })
 
 const { data: arrayDemoData } = useQuery({
   key: ['features', 'arr-contacts'],
-  query: async () => arrSeed.map(c => ({ ...c })),
+  query: async () => {
+    arrFetchCount.value++
+    return arrSeed.map(c => ({ ...c }))
+  },
   normalize: true,
 })
 
@@ -227,7 +231,10 @@ function toggleStatus() {
           <button class="btn btn-danger" @click="removeFirstFromList">Remove First</button>
         </div>
         <div class="list-display">
-          <span class="label">Query data ({{ (arrayDemoData as any[])?.length ?? 0 }} items):</span>
+          <div class="list-header">
+            <span class="label">Query data ({{ (arrayDemoData as any[])?.length ?? 0 }} items):</span>
+            <span class="fetch-counter">Network requests: {{ arrFetchCount }}</span>
+          </div>
           <div v-if="arrayDemoData" class="entity-chips">
             <span v-for="c in (arrayDemoData as any[])" :key="c.contactId" class="chip">
               {{ c.name }}
@@ -396,6 +403,22 @@ function toggleStatus() {
 .list-display {
   display: flex; flex-direction: column; gap: 6px;
   padding: 8px 12px; background: var(--surface-raised); border-radius: 6px;
+}
+
+.list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.fetch-counter {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: monospace;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--success-bg);
+  color: var(--success);
 }
 
 .entity-chips { display: flex; flex-wrap: wrap; gap: 4px; }
