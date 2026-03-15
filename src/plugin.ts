@@ -157,6 +157,16 @@ export function PiniaColadaNormalizer(options: NormalizerPluginOptions = {}): Pi
     normalizerStore.setEntityDefs(entityDefs, defaultIdField);
     const entityStoreInstance = normalizerStore.getStore();
 
+    // DevTools integration (dev-only, tree-shaken in production)
+    if (process.env.NODE_ENV !== "production") {
+      const app = (pinia as any)._a;
+      if (app) {
+        import("./devtools").then(({ setupDevtools }) => {
+          setupDevtools(app, entityStoreInstance);
+        });
+      }
+    }
+
     queryCache.$onAction(({ name, args }) => {
       // ── extend: initialize ext + customRef replacement ──
       // Called once per entry creation. Must use scope.run() for reactive refs.
