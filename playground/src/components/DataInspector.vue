@@ -135,7 +135,7 @@ function formatData(data: unknown): string {
             <pre class="entry-data">{{ formatData(entry.data) }}</pre>
           </div>
           <div v-if="!normalized" class="metric warning">
-            {{ duplicationInfo.duplicates }} duplicate {{ duplicationInfo.duplicates === 1 ? 'entity' : 'entities' }} — each query stores its own copy
+            The same contacts live in both queries with no automatic sync.
           </div>
           <div v-else class="metric success">
             → references point to the entity store. Each query derives only the fields it needs — but the entity is stored once.
