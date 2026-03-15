@@ -198,9 +198,12 @@ export function useEntityRef(
   // When id is static, toValue() is a no-op and the computed
   // only re-runs when the entity's ShallowRef changes.
   // When id is reactive, the computed re-runs on ID change too.
+  // Call store.get() unconditionally — it creates a phantom ShallowRef if the
+  // entity doesn't exist yet. Vue tracks this ref, so when the entity later
+  // arrives via store.set(), the ShallowRef is populated and this computed
+  // re-evaluates. Using has() first would bypass this reactive tracking.
   return computed(() => {
     const resolvedId = toValue(id);
-    if (!store.has(entityType, resolvedId)) return undefined;
     return store.get(entityType, resolvedId).value;
   });
 }

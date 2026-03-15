@@ -1126,6 +1126,33 @@ describe("Plugin Integration", () => {
       expect(wrapper.vm.contact).toBeUndefined();
     });
 
+    it("updates when entity arrives after ref was created", async () => {
+      const { pinia } = factory(async () => [{ contactId: "1", name: "Alice" }], ["contacts"], {
+        entities: { contact: defineEntity({ idField: "contactId" }) },
+      });
+
+      await flushPromises();
+
+      // Create a ref to a non-existent entity
+      const wrapper = mount(
+        defineComponent({
+          template: "<div></div>",
+          setup() {
+            return { contact: useEntityRef("contact", "99", pinia) };
+          },
+        }),
+        { global: { plugins: [pinia] } },
+      );
+
+      expect(wrapper.vm.contact).toBeUndefined();
+
+      // Entity arrives later (e.g., via WebSocket push)
+      const entityStore = useEntityStore(pinia);
+      entityStore.set("contact", "99", { contactId: "99", name: "Late Arrival" });
+
+      expect(wrapper.vm.contact?.name).toBe("Late Arrival");
+    });
+
     it("accepts reactive ID and switches entities", async () => {
       const { pinia } = factory(
         async () => [
@@ -1225,6 +1252,39 @@ describe("Plugin Integration", () => {
       // Query should reflect the update (entity store is shared)
       const data = wrapper.vm.data as any[];
       expect(data[0].name).toBe("Alicia");
+    });
+
+    it("respects custom merge functions", async () => {
+      const { pinia } = factory(
+        async () => ({ contactId: "1", name: "Alice", tags: ["friend"] }),
+        ["contacts", "1"],
+        {
+          entities: {
+            contact: defineEntity({
+              idField: "contactId",
+              merge: (existing, incoming) => ({
+                ...existing,
+                ...incoming,
+                tags: [
+                  ...((existing.tags as string[]) || []),
+                  ...((incoming.tags as string[]) || []),
+                ],
+              }),
+            }),
+          },
+        },
+      );
+
+      await flushPromises();
+
+      const entityStore = useEntityStore(pinia);
+      expect(entityStore.get("contact", "1").value?.tags).toEqual(["friend"]);
+
+      // useNormalizeMutation should apply custom merge (append tags, not replace)
+      const normalizeMutation = useNormalizeMutation(pinia);
+      normalizeMutation({ contactId: "1", name: "Alice", tags: ["coworker"] });
+
+      expect(entityStore.get("contact", "1").value?.tags).toEqual(["friend", "coworker"]);
     });
   });
 
@@ -2129,6 +2189,72 @@ describe("Plugin Integration", () => {
       expect(data).toBeDefined();
       expect(data.name).toBe("Alice");
       expect(data.contactId).toBe("42");
+    });
+
+    it("does not overwrite user-provided placeholderData", async () => {
+      const normalizerPlugin = PiniaColadaNormalizer({
+        entities: { contact: defineEntity({ idField: "contactId" }) },
+        autoRedirect: true,
+      });
+      const pinia = createPinia();
+
+      // Populate entity store
+      mount(
+        defineComponent({
+          template: "<div></div>",
+          setup() {
+            return {
+              ...useQuery({
+                query: () =>
+                  Promise.resolve([
+                    { contactId: "42", name: "Alice", __typename: "contact" },
+                  ]),
+                key: ["contacts-seed5"],
+                normalize: true,
+              }),
+            };
+          },
+        }),
+        {
+          global: {
+            plugins: [
+              pinia,
+              [PiniaColada, { plugins: [normalizerPlugin] } satisfies PiniaColadaOptions],
+            ],
+          },
+        },
+      );
+      await flushPromises();
+
+      // Detail query with BOTH autoRedirect match AND user-provided placeholderData
+      const wrapper = mount(
+        defineComponent({
+          template: "<div></div>",
+          setup() {
+            return {
+              ...useQuery({
+                query: () => new Promise(() => {}),
+                key: ["contact", "42"],
+                normalize: true,
+                placeholderData: () => ({ contactId: "42", name: "User Placeholder" }),
+              }),
+            };
+          },
+        }),
+        {
+          global: {
+            plugins: [
+              pinia,
+              [PiniaColada, { plugins: [normalizerPlugin] } satisfies PiniaColadaOptions],
+            ],
+          },
+        },
+      );
+
+      // User's placeholderData should win, not autoRedirect's cached entity
+      const data = wrapper.vm.data as any;
+      expect(data).toBeDefined();
+      expect(data.name).toBe("User Placeholder");
     });
   });
 });
