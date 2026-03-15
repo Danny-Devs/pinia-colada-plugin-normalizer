@@ -189,22 +189,6 @@ const storeSize = computed(() => {
       </div>
     </div>
 
-    <!-- Live entity sample (only after test started) -->
-    <div v-if="totalUpdates > 0 || isRunning" class="sample-panel">
-      <h3 class="section-title">Live Entity Sample <span class="muted">(first 20)</span></h3>
-      <div class="entity-grid">
-        <div
-          v-for="entity in entityStore.getByType('contact').value.slice(0, 20)"
-          :key="(entity as any).contactId"
-          class="entity-card"
-        >
-          <span class="entity-id">#{{ (entity as any).contactId }}</span>
-          <span class="entity-name">{{ (entity as any).name }}</span>
-          <span :class="['entity-status', (entity as any).status]">{{ (entity as any).status }}</span>
-        </div>
-      </div>
-    </div>
-
     <!-- Dedup verification (only after test started) -->
     <div v-if="totalUpdates > 0 || isRunning" class="dedup-panel">
       <h3 class="section-title">Entity Deduplication Check</h3>
@@ -348,70 +332,13 @@ const storeSize = computed(() => {
   margin-top: 2px;
 }
 
-/* Entity sample */
-.sample-panel {
-  margin-bottom: 16px;
-}
-
+/* Dedup */
 .section-title {
   font-size: 14px;
   font-weight: 600;
   margin: 0 0 8px;
 }
 
-.muted {
-  color: var(--text-muted);
-  font-weight: 400;
-}
-
-.entity-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 6px;
-}
-
-.entity-card {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  font-size: 12px;
-}
-
-.entity-id {
-  font-family: monospace;
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.entity-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.entity-status {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 6px;
-  border-radius: 3px;
-}
-
-.entity-status.active {
-  background: var(--success-bg);
-  color: var(--success);
-}
-
-.entity-status.inactive {
-  background: var(--danger-bg);
-  color: var(--danger);
-}
-
-/* Dedup */
 .dedup-panel {
   margin-bottom: 16px;
 }
