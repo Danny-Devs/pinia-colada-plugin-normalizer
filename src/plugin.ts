@@ -42,6 +42,38 @@ function splitEntityKey(key: string): [string, string] {
   return [key.slice(0, idx), key.slice(idx + 1)];
 }
 
+/**
+ * Write extracted entities to the store, respecting custom merge policies.
+ * Entities with a custom merge function are processed individually;
+ * the rest are batched for efficiency.
+ * @internal
+ */
+function writeEntitiesToStore(
+  entities: NormalizationResult["entities"],
+  entityDefs: Record<string, EntityDefinition>,
+  store: EntityStore,
+): void {
+  const customMergeEntities = entities.filter(
+    (e) => entityDefs[e.entityType]?.merge,
+  );
+  const regularEntities = entities.filter(
+    (e) => !entityDefs[e.entityType]?.merge,
+  );
+
+  if (regularEntities.length > 0) {
+    store.setMany(regularEntities);
+  }
+  for (const entity of customMergeEntities) {
+    const mergeFn = entityDefs[entity.entityType].merge!;
+    if (store.has(entity.entityType, entity.id)) {
+      const existing = store.get(entity.entityType, entity.id).value!;
+      store.replace(entity.entityType, entity.id, mergeFn(existing, entity.data));
+    } else {
+      store.set(entity.entityType, entity.id, entity.data);
+    }
+  }
+}
+
 // ─────────────────────────────────────────────
 // SSR-safe entity store via defineStore
 // ─────────────────────────────────────────────
@@ -212,7 +244,9 @@ export function PiniaColadaNormalizer(options: NormalizerPluginOptions = {}): Pi
               }
             }
 
-            if (redirectEntityType && redirectId && entityStoreInstance.has(redirectEntityType, redirectId)) {
+            if (redirectEntityType && redirectId
+              && !(entry as any).placeholderData
+              && entityStoreInstance.has(redirectEntityType, redirectId)) {
               const rawEntity = entityStoreInstance.get(redirectEntityType, redirectId).value;
               if (rawEntity != null) {
                 // Denormalize to resolve nested EntityRefs before handing to the template
@@ -337,35 +371,7 @@ export function PiniaColadaNormalizer(options: NormalizerPluginOptions = {}): Pi
                     return;
                   }
                   if (result.entities.length > 0) {
-                    // Write entities to the store, respecting custom merge policies.
-                    // Entities with a custom merge function are processed individually;
-                    // the rest are batched for efficiency.
-                    const customMergeEntities = result.entities.filter(
-                      (e) => entityDefs[e.entityType]?.merge,
-                    );
-                    const regularEntities = result.entities.filter(
-                      (e) => !entityDefs[e.entityType]?.merge,
-                    );
-
-                    if (regularEntities.length > 0) {
-                      entityStoreInstance.setMany(regularEntities);
-                    }
-                    for (const entity of customMergeEntities) {
-                      const mergeFn = entityDefs[entity.entityType].merge!;
-                      if (entityStoreInstance.has(entity.entityType, entity.id)) {
-                        const existing = entityStoreInstance.get(
-                          entity.entityType,
-                          entity.id,
-                        ).value!;
-                        entityStoreInstance.replace(
-                          entity.entityType,
-                          entity.id,
-                          mergeFn(existing, entity.data),
-                        );
-                      } else {
-                        entityStoreInstance.set(entity.entityType, entity.id, entity.data);
-                      }
-                    }
+                    writeEntitiesToStore(result.entities, entityDefs, entityStoreInstance);
 
                     // GC lifecycle: retain new keys FIRST, then release old ones.
                     // This order prevents a transient zero-refcount window for
@@ -613,7 +619,7 @@ export function useNormalizeMutation(pinia?: Pinia): (data: unknown) => void {
   return (data: unknown) => {
     const result = normalize(data, entityDefs, defaultIdField);
     if (result.entities.length > 0) {
-      entityStoreInstance.setMany(result.entities);
+      writeEntitiesToStore(result.entities, entityDefs, entityStoreInstance);
     }
   };
 }
