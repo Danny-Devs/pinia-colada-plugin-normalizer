@@ -227,20 +227,22 @@ export function PiniaColadaNormalizer(
                     }
                   }
 
-                  // GC lifecycle: release old entity keys, retain new ones
+                  // GC lifecycle: retain new keys FIRST, then release old ones.
+                  // This order prevents a transient zero-refcount window for
+                  // entities present in both old and new sets.
                   const newEntityKeys = result.entities.map(
                     (e) => `${e.entityType}:${e.id}`,
                   )
+                  for (const key of newEntityKeys) {
+                    const [type, id] = splitEntityKey(key)
+                    entityStoreInstance.retain(type, id)
+                  }
                   const oldMeta = entry.ext[NORM_META_KEY].value
                   if (oldMeta.isNormalized) {
                     for (const key of oldMeta.entityKeys) {
                       const [type, id] = splitEntityKey(key)
                       entityStoreInstance.release(type, id)
                     }
-                  }
-                  for (const key of newEntityKeys) {
-                    const [type, id] = splitEntityKey(key)
-                    entityStoreInstance.retain(type, id)
                   }
 
                   // Update ext metadata via ShallowRef .value

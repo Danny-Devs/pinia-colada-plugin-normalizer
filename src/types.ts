@@ -115,6 +115,10 @@ export interface EntityStore {
    * - Analytics / debugging
    * - Cross-tab synchronization
    *
+   * Note: no event is emitted for no-op writes (when `set()` is called
+   * with data identical to what's already stored). This preserves
+   * referential identity and prevents unnecessary downstream work.
+   *
    * @returns Unsubscribe function
    */
   subscribe(
