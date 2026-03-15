@@ -69,7 +69,7 @@ function activateDiana() {
           </div>
           <div class="control-divider"></div>
           <div class="action-group">
-            <span class="action-label">Simulate update:</span>
+            <span class="action-label">Update an entity:</span>
             <button @click="renameAlice" :class="['action-btn', { applied: clicked.has('alice') }]" :disabled="clicked.has('alice')">Alice → Alicia</button>
             <button @click="promoteBob" :class="['action-btn', { applied: clicked.has('bob') }]" :disabled="clicked.has('bob')">Bob → Lead Designer</button>
             <button @click="activateDiana" :class="['action-btn', { applied: clicked.has('diana') }]" :disabled="clicked.has('diana')">Diana → active</button>
@@ -80,10 +80,10 @@ function activateDiana() {
       <!-- Mode hint -->
       <div :class="['mode-hint', normalized ? 'success' : 'warning']">
         <template v-if="normalized">
-          With normalization, data is stored once and reactively shared across all queries. Click an update above — both views stay in sync instantly, with zero extra API calls.
+          With normalization, each entity is stored once. Update it anywhere and both views reflect the change instantly.
         </template>
         <template v-else>
-          Without normalization, the same data can end up duplicated across queries. When new data arrives and you only update one copy, the rest go stale. Click an update above — we only update the detail query's cache, so the list falls out of sync.
+          Without normalization, each query stores its own copy. Update one and the other goes stale.
         </template>
       </div>
 
