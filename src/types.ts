@@ -178,13 +178,29 @@ export interface EntityStore {
  *
  * Convention: objects with an `id` field are auto-detected as entities.
  * Use defineEntity() when your API uses non-standard ID fields.
+ *
+ * @typeParam T - The entity shape. Provides type safety for `getId` and `merge`
+ *   callbacks. Defaults to `EntityRecord` if not specified.
+ *
+ * @example
+ * interface Contact {
+ *   contactId: string
+ *   name: string
+ *   email: string
+ * }
+ *
+ * const contact = defineEntity<Contact>({
+ *   idField: 'contactId',
+ *   getId: (entity) => entity.contactId, // entity is typed as Contact
+ *   merge: (existing, incoming) => ({ ...existing, ...incoming }), // both typed
+ * })
  */
-export interface EntityDefinition {
+export interface EntityDefinition<T extends EntityRecord = EntityRecord> {
   /**
    * The field name that contains the entity's unique ID.
    * @default 'id'
    */
-  idField?: string
+  idField?: string & keyof T | (string & {})
 
   /**
    * A function to extract the ID from an entity.
@@ -201,7 +217,7 @@ export interface EntityDefinition {
    *   return `${entity.orgId}-${entity.userId}`
    * }
    */
-  getId?: (entity: EntityRecord) => string | null | undefined
+  getId?: (entity: T) => string | null | undefined
 
   /**
    * Custom merge function for this entity type.
@@ -215,16 +231,28 @@ export interface EntityDefinition {
    * merge: (existing, incoming) => ({
    *   ...existing,
    *   ...incoming,
-   *   replies: [...(existing.replies as any[] || []), ...(incoming.replies as any[] || [])],
+   *   replies: [...(existing.replies || []), ...(incoming.replies || [])],
    * })
    */
-  merge?: (existing: EntityRecord, incoming: EntityRecord) => EntityRecord
+  merge?: (existing: T, incoming: T) => T
 }
 
 /**
  * Helper to define an entity configuration with type safety.
+ *
+ * @typeParam T - The entity shape. When provided, `getId`, `merge`, and
+ *   `idField` get type-checked against your entity interface.
+ *
+ * @example
+ * // Without generic (still works, no type checking on callbacks):
+ * defineEntity({ idField: 'contactId' })
+ *
+ * // With generic (getId and merge are typed):
+ * defineEntity<Contact>({ idField: 'contactId' })
  */
-export function defineEntity(config: EntityDefinition): EntityDefinition {
+export function defineEntity<T extends EntityRecord = EntityRecord>(
+  config: EntityDefinition<T>,
+): EntityDefinition<T> {
   return config
 }
 
