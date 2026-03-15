@@ -56,6 +56,8 @@
   },
   "devDependencies": {
     "@pinia/colada": "^1.0.0",
+    "@vue/test-utils": "^2.4.6",
+    "happy-dom": "^20.8.4",
     "pinia": "^2.3.0",
     "tsdown": "^0.12.0",
     "typescript": "^5.7.0",
