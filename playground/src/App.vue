@@ -1,21 +1,18 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
-import { useColorMode } from '@vueuse/core'
+import AppHeader from './components/AppHeader.vue'
 import ContactList from './components/ContactList.vue'
 import ContactDetail from './components/ContactDetail.vue'
 import ContactListRaw from './components/ContactListRaw.vue'
 import ContactDetailRaw from './components/ContactDetailRaw.vue'
 import DataInspector from './components/DataInspector.vue'
+import StressTestPage from './components/StressTestPage.vue'
 import { useDemo } from './composables/useDemo'
 
+const currentPage = ref('demo')
 const selectedId = ref<string | null>('1')
 const { normalized, entityWrites, rawUpdates, log, applyUpdate, resetDemo } = useDemo()
 const clicked = reactive(new Set<string>())
-const colorMode = useColorMode({ attribute: 'data-theme' })
-
-function toggleTheme() {
-  colorMode.value = colorMode.value === 'dark' ? 'light' : 'dark'
-}
 
 function toggleMode() {
   normalized.value = !normalized.value
@@ -51,87 +48,86 @@ function activateDiana() {
 
 <template>
   <div class="app">
-    <!-- Header: compact -->
-    <header>
-      <div class="header-row">
-        <h1>pinia-colada-plugin-normalizer</h1>
-        <button class="theme-toggle" @click="toggleTheme">
-          {{ colorMode === 'dark' ? '☀️' : '🌙' }}
-        </button>
-      </div>
+    <AppHeader :current-page="currentPage" @navigate="currentPage = $event" />
+
+    <!-- Demo page -->
+    <template v-if="currentPage === 'demo'">
       <p class="tagline">
         Store each record once. Update it in one place, every view reflects the change.
       </p>
-    </header>
 
-    <!-- Control strip: toggle + action buttons + stats in one row -->
-    <div class="controls">
-      <div class="control-left">
-        <div class="toggle-group">
-          <span class="toggle-label">Normalization</span>
-          <button :class="['toggle-btn']" @click="toggleMode">
-            <span class="toggle-option" :class="{ selected: !normalized }">OFF</span>
-            <span class="toggle-option" :class="{ selected: normalized }">ON</span>
-          </button>
+      <!-- Control strip -->
+      <div class="controls">
+        <div class="control-left">
+          <div class="toggle-group">
+            <span class="toggle-label">Normalization</span>
+            <button :class="['toggle-btn']" @click="toggleMode">
+              <span class="toggle-option" :class="{ selected: !normalized }">OFF</span>
+              <span class="toggle-option" :class="{ selected: normalized }">ON</span>
+            </button>
+          </div>
+          <div class="control-divider"></div>
+          <div class="action-group">
+            <span class="action-label">Simulate update:</span>
+            <button @click="renameAlice" :class="['action-btn', { applied: clicked.has('alice') }]" :disabled="clicked.has('alice')">Alice → Alicia</button>
+            <button @click="promoteBob" :class="['action-btn', { applied: clicked.has('bob') }]" :disabled="clicked.has('bob')">Bob → Lead Designer</button>
+            <button @click="activateDiana" :class="['action-btn', { applied: clicked.has('diana') }]" :disabled="clicked.has('diana')">Diana → active</button>
+          </div>
         </div>
-        <div class="control-divider"></div>
-        <div class="action-group">
-          <span class="action-label">Simulate update:</span>
-          <button @click="renameAlice" :class="['action-btn', { applied: clicked.has('alice') }]" :disabled="clicked.has('alice')">Alice → Alicia</button>
-          <button @click="promoteBob" :class="['action-btn', { applied: clicked.has('bob') }]" :disabled="clicked.has('bob')">Bob → Lead Designer</button>
-          <button @click="activateDiana" :class="['action-btn', { applied: clicked.has('diana') }]" :disabled="clicked.has('diana')">Diana → active</button>
+      </div>
+
+      <!-- Mode hint -->
+      <div :class="['mode-hint', normalized ? 'success' : 'warning']">
+        <template v-if="normalized">
+          With normalization, data is stored once and reactively shared across all queries. Click an update above — both views stay in sync instantly, with zero extra API calls.
+        </template>
+        <template v-else>
+          Without normalization, the same data can end up duplicated across queries. When new data arrives and you only update one copy, the rest go stale. Click an update above — we only update the detail query's cache, so the list falls out of sync.
+        </template>
+      </div>
+
+      <!-- Panels -->
+      <div class="panels">
+        <div class="panel-container">
+          <ContactList
+            v-if="normalized"
+            :selected-id="selectedId"
+            :normalized="true"
+            @select="selectedId = $event"
+          />
+          <ContactListRaw
+            v-else
+            :selected-id="selectedId"
+            @select="selectedId = $event"
+          />
+        </div>
+        <div class="panel-container">
+          <ContactDetail
+            v-if="normalized"
+            :contact-id="selectedId"
+            :normalized="true"
+          />
+          <ContactDetailRaw
+            v-else
+            :contact-id="selectedId"
+          />
         </div>
       </div>
-    </div>
 
-    <!-- Mode hint -->
-    <div :class="['mode-hint', normalized ? 'success' : 'warning']">
-      <template v-if="normalized">
-        With normalization, data is stored once and reactively shared across all queries. Click an update above — both views stay in sync instantly, with zero extra API calls.
-      </template>
-      <template v-else>
-        Without normalization, the same data can end up duplicated across queries. When new data arrives and you only update one copy, the rest go stale. Click an update above — we only update the detail query's cache, so the list falls out of sync.
-      </template>
-    </div>
-
-    <!-- Panels -->
-    <div class="panels">
-      <div class="panel-container">
-        <ContactList
-          v-if="normalized"
-          :selected-id="selectedId"
-          :normalized="true"
-          @select="selectedId = $event"
-        />
-        <ContactListRaw
-          v-else
-          :selected-id="selectedId"
-          @select="selectedId = $event"
-        />
+      <!-- Event log -->
+      <div v-if="log.length" class="event-log-bar">
+        <div v-for="(entry, i) in log" :key="i" :class="['log-entry', entry.type]">
+          <span class="log-time">{{ entry.time }}</span>
+          <span class="log-msg">{{ entry.message }}</span>
+        </div>
       </div>
-      <div class="panel-container">
-        <ContactDetail
-          v-if="normalized"
-          :contact-id="selectedId"
-          :normalized="true"
-        />
-        <ContactDetailRaw
-          v-else
-          :contact-id="selectedId"
-        />
-      </div>
-    </div>
 
-    <!-- Event log (only when there are events) -->
-    <div v-if="log.length" class="event-log-bar">
-      <div v-for="(entry, i) in log" :key="i" :class="['log-entry', entry.type]">
-        <span class="log-time">{{ entry.time }}</span>
-        <span class="log-msg">{{ entry.message }}</span>
-      </div>
-    </div>
+      <!-- Data Inspector -->
+      <DataInspector :normalized="normalized" />
+    </template>
 
-    <!-- Data Inspector -->
-    <DataInspector :normalized="normalized" />
+    <!-- Stress test page -->
+    <StressTestPage v-else-if="currentPage === 'stress'" />
   </div>
 </template>
 
@@ -182,15 +178,8 @@ body {
 
 .app { max-width: 960px; margin: 0 auto; padding: 0 16px 32px; }
 
-/* Header */
-header { padding: 20px 0 0; }
-.header-row { display: flex; justify-content: space-between; align-items: center; }
-h1 { margin: 0; font-size: 20px; font-weight: 600; }
-.tagline { margin: 4px 0 0; color: var(--text-muted); font-size: 14px; line-height: 1.4; }
-.theme-toggle {
-  background: var(--surface-raised); border: 1px solid var(--border);
-  border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 14px;
-}
+/* Tagline */
+.tagline { margin: 0 0 12px; color: var(--text-muted); font-size: 14px; line-height: 1.4; }
 
 /* Control strip */
 .controls {
