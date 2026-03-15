@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, reactive, computed, nextTick } from 'vue'
-import { useQuery, useQueryCache } from '@pinia/colada'
+import { ref, reactive, computed } from 'vue'
+import { useQuery } from '@pinia/colada'
 import {
   useEntityStore,
   useOptimisticUpdate,
@@ -13,45 +13,31 @@ import {
 } from 'pinia-colada-plugin-normalizer'
 
 const entityStore = useEntityStore()
-const queryCache = useQueryCache()
-
-// ─── Shared seed data ────────────────────────
-let nextId = 10
-function seedIfEmpty() {
-  if (!entityStore.has('contact', '1')) {
-    entityStore.set('contact', '1', { contactId: '1', name: 'Alice Chen', role: 'Engineer', status: 'active' })
-    entityStore.set('contact', '2', { contactId: '2', name: 'Bob Park', role: 'Designer', status: 'active' })
-    entityStore.set('contact', '3', { contactId: '3', name: 'Charlie Reeves', role: 'PM', status: 'inactive' })
-  }
-}
-seedIfEmpty()
 
 // ═══════════════════════════════════════════════
-// 1. OPTIMISTIC UPDATES
+// 1. OPTIMISTIC UPDATES (prefix: opt-)
 // ═══════════════════════════════════════════════
-const { apply, transaction } = useOptimisticUpdate()
+// Seed
+entityStore.set('contact', 'opt-1', { contactId: 'opt-1', name: 'Alice Chen', role: 'Engineer', status: 'active' })
+
+const { apply } = useOptimisticUpdate()
 const optimisticStatus = ref<'idle' | 'pending-success' | 'pending-fail' | 'rolled-back' | 'committed'>('idle')
 
 function optimisticSuccess() {
-  // Reset to clean state first
-  entityStore.replace('contact', '1', { contactId: '1', name: 'Alice Chen', role: 'Engineer', status: 'active' })
+  entityStore.replace('contact', 'opt-1', { contactId: 'opt-1', name: 'Alice Chen', role: 'Engineer', status: 'active' })
   optimisticStatus.value = 'pending-success'
-  const rollback = apply('contact', '1', { contactId: '1', name: 'Alicia Chen', role: 'Engineer', status: 'active' })
+  apply('contact', 'opt-1', { contactId: 'opt-1', name: 'Alicia Chen', role: 'Engineer', status: 'active' })
 
-  // Simulate server confirming after 1.5s
   setTimeout(() => {
-    // Server confirms — data matches optimistic, no visible change
     optimisticStatus.value = 'committed'
   }, 1500)
 }
 
 function optimisticFail() {
-  // Reset to clean state first
-  entityStore.replace('contact', '1', { contactId: '1', name: 'Alice Chen', role: 'Engineer', status: 'active' })
+  entityStore.replace('contact', 'opt-1', { contactId: 'opt-1', name: 'Alice Chen', role: 'Engineer', status: 'active' })
   optimisticStatus.value = 'pending-fail'
-  const rollback = apply('contact', '1', { contactId: '1', name: 'Alicia Chen', role: 'Engineer', status: 'active' })
+  const rollback = apply('contact', 'opt-1', { contactId: 'opt-1', name: 'Alicia Chen', role: 'Engineer', status: 'active' })
 
-  // Simulate server rejecting after 1.5s
   setTimeout(() => {
     rollback()
     optimisticStatus.value = 'rolled-back'
@@ -59,15 +45,18 @@ function optimisticFail() {
 }
 
 function resetOptimistic() {
-  entityStore.replace('contact', '1', { contactId: '1', name: 'Alice Chen', role: 'Engineer', status: 'active' })
+  entityStore.replace('contact', 'opt-1', { contactId: 'opt-1', name: 'Alice Chen', role: 'Engineer', status: 'active' })
   optimisticStatus.value = 'idle'
 }
 
-const aliceName = computed(() => entityStore.get('contact', '1').value?.name ?? 'N/A')
+const aliceName = computed(() => entityStore.get('contact', 'opt-1').value?.name ?? 'N/A')
 
 // ═══════════════════════════════════════════════
-// 2. REAL-TIME HOOKS
+// 2. REAL-TIME HOOKS (prefix: hook-)
 // ═══════════════════════════════════════════════
+let hookNextId = 1
+entityStore.set('contact', 'hook-1', { contactId: 'hook-1', name: 'Bob Park', role: 'Designer', status: 'active' })
+
 interface HookEvent {
   time: string
   type: 'added' | 'updated' | 'removed'
@@ -81,47 +70,63 @@ function logHook(type: HookEvent['type'], message: string) {
   if (hookEvents.length > 10) hookEvents.pop()
 }
 
-onEntityAdded('contact', (e) => logHook('added', `Added: ${(e.data as any)?.name ?? e.id}`))
-onEntityUpdated('contact', (e) => logHook('updated', `Updated: ${e.id} → ${(e.data as any)?.name}`))
-onEntityRemoved('contact', (e) => logHook('removed', `Removed: ${(e.previousData as any)?.name ?? e.id}`))
+// Only listen to hook- prefixed entities
+onEntityAdded('contact', (e) => {
+  if (!e.id.startsWith('hook-')) return
+  logHook('added', `Added: ${(e.data as any)?.name ?? e.id}`)
+})
+onEntityUpdated('contact', (e) => {
+  if (!e.id.startsWith('hook-')) return
+  logHook('updated', `Updated: ${e.id} → ${(e.data as any)?.name}`)
+})
+onEntityRemoved('contact', (e) => {
+  if (!e.id.startsWith('hook-')) return
+  logHook('removed', `Removed: ${(e.previousData as any)?.name ?? e.id}`)
+})
 
 function triggerAdd() {
-  const id = String(nextId++)
-  entityStore.set('contact', id, { contactId: id, name: `Contact ${id}`, role: 'New', status: 'active' })
+  hookNextId++
+  const id = `hook-${hookNextId}`
+  entityStore.set('contact', id, { contactId: id, name: `Contact ${hookNextId}`, role: 'New', status: 'active' })
 }
 
 function triggerUpdate() {
-  entityStore.set('contact', '2', { contactId: '2', name: `Bob Park (v${Date.now() % 1000})`, role: 'Designer', status: 'active' })
+  entityStore.set('contact', 'hook-1', { contactId: 'hook-1', name: `Bob Park (v${Date.now() % 1000})`, role: 'Designer', status: 'active' })
 }
 
 function triggerRemove() {
+  // Find last hook- entity
   const all = entityStore.getByType('contact').value
-  if (all.length > 0) {
-    const last = all[all.length - 1] as any
+  const hookEntities = all.filter((e: any) => e.contactId?.startsWith('hook-'))
+  if (hookEntities.length > 0) {
+    const last = hookEntities[hookEntities.length - 1] as any
     entityStore.remove('contact', last.contactId)
   }
 }
 
 // ═══════════════════════════════════════════════
-// 3. ARRAY OPERATIONS
+// 3. ARRAY OPERATIONS (prefix: arr-)
 // ═══════════════════════════════════════════════
-const listQueryData = ref<any[]>([])
+let arrNextId = 3
+const arrSeed = [
+  { contactId: 'arr-1', name: 'Dana Kim', role: 'Engineer', status: 'active' },
+  { contactId: 'arr-2', name: 'Eli Torres', role: 'PM', status: 'active' },
+  { contactId: 'arr-3', name: 'Fiona Lee', role: 'Designer', status: 'active' },
+]
+for (const c of arrSeed) entityStore.set('contact', c.contactId, { ...c })
 
-// Use a real query for the array ops demo
 const { data: arrayDemoData } = useQuery({
-  key: ['features', 'contacts'],
-  query: async () => {
-    // Return current entities as if from an API
-    return entityStore.getByType('contact').value.slice(0, 5).map(e => ({ ...e }))
-  },
+  key: ['features', 'arr-contacts'],
+  query: async () => arrSeed.map(c => ({ ...c })),
   normalize: true,
 })
 
 function addToList() {
-  const id = String(nextId++)
-  const newContact = { contactId: id, name: `New Contact ${id}`, role: 'Added', status: 'active' }
+  arrNextId++
+  const id = `arr-${arrNextId}`
+  const newContact = { contactId: id, name: `Contact ${arrNextId}`, role: 'Added', status: 'active' }
   entityStore.set('contact', id, newContact)
-  updateQueryData(['features', 'contacts'], (data) => [...(data as any[]), newContact])
+  updateQueryData(['features', 'arr-contacts'], (data) => [...(data as any[]), newContact])
 }
 
 function removeFirstFromList() {
@@ -132,18 +137,21 @@ function removeFirstFromList() {
 }
 
 // ═══════════════════════════════════════════════
-// 4. ENTITY QUERIES (filtered views)
+// 4. ENTITY QUERIES (prefix: eq-)
 // ═══════════════════════════════════════════════
-const activeContacts = useEntityQuery('contact', (c) => c.status === 'active')
-const inactiveContacts = useEntityQuery('contact', (c) => c.status === 'inactive')
+entityStore.set('contact', 'eq-1', { contactId: 'eq-1', name: 'Grace Wu', role: 'Engineer', status: 'active' })
+entityStore.set('contact', 'eq-2', { contactId: 'eq-2', name: 'Henry Zhao', role: 'Designer', status: 'active' })
+entityStore.set('contact', 'eq-3', { contactId: 'eq-3', name: 'Iris Patel', role: 'PM', status: 'inactive' })
+
+const activeContacts = useEntityQuery('contact', (c) => (c.contactId as string)?.startsWith('eq-') && c.status === 'active')
+const inactiveContacts = useEntityQuery('contact', (c) => (c.contactId as string)?.startsWith('eq-') && c.status === 'inactive')
 
 function toggleStatus() {
-  // Toggle contact 3 between active/inactive
-  const c3 = entityStore.get('contact', '3').value
-  if (c3) {
-    entityStore.set('contact', '3', {
-      ...c3,
-      status: c3.status === 'active' ? 'inactive' : 'active',
+  const iris = entityStore.get('contact', 'eq-3').value
+  if (iris) {
+    entityStore.set('contact', 'eq-3', {
+      ...iris,
+      status: iris.status === 'active' ? 'inactive' : 'active',
     })
   }
 }
@@ -239,7 +247,7 @@ function toggleStatus() {
       </p>
       <div class="feature-demo">
         <div class="feature-actions">
-          <button class="btn btn-accent" @click="toggleStatus">Toggle Charlie's Status</button>
+          <button class="btn btn-accent" @click="toggleStatus">Toggle Iris's Status</button>
         </div>
         <div class="query-columns">
           <div class="query-col">
@@ -278,7 +286,6 @@ function toggleStatus() {
   line-height: 1.5;
 }
 
-/* Feature cards */
 .feature-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -319,7 +326,6 @@ function toggleStatus() {
   flex-wrap: wrap;
 }
 
-/* Buttons */
 .btn {
   padding: 6px 14px;
   border: none;
@@ -330,11 +336,7 @@ function toggleStatus() {
   transition: all 0.15s;
 }
 
-.btn:disabled {
-  opacity: 0.4;
-  pointer-events: none;
-}
-
+.btn:disabled { opacity: 0.4; pointer-events: none; }
 .btn-success { background: var(--success); color: #fff; }
 .btn-success:hover { filter: brightness(1.1); }
 .btn-danger { background: var(--danger); color: #fff; }
@@ -344,7 +346,6 @@ function toggleStatus() {
 .btn-muted { background: var(--surface-raised); border: 1px solid var(--border); color: var(--text-muted); }
 .btn-muted:hover { background: var(--surface-hover); }
 
-/* Entity display */
 .entity-display {
   display: flex;
   align-items: center;
@@ -354,37 +355,18 @@ function toggleStatus() {
   border-radius: 6px;
 }
 
-.label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-
+.label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
 .label.success { color: var(--success); }
 .label.danger { color: var(--danger); }
 
-.value {
-  font-size: 14px;
-  font-weight: 500;
-  font-family: monospace;
-}
+.value { font-size: 14px; font-weight: 500; font-family: monospace; }
+.value.muted { color: var(--text-muted); }
 
-.value.muted {
-  color: var(--text-muted);
-}
-
-.badge {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 3px;
-}
-
+.badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 3px; }
 .badge.pending { background: var(--warning-bg); color: var(--warning); }
 .badge.success { background: var(--success-bg); color: var(--success); }
 .badge.danger { background: var(--danger-bg); color: var(--danger); }
 
-/* Event log */
 .event-log {
   padding: 8px 12px;
   background: var(--surface-raised);
@@ -393,27 +375,17 @@ function toggleStatus() {
   overflow-y: auto;
 }
 
-.event-log.empty {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-style: italic;
-}
+.event-log.empty { color: var(--text-muted); font-size: 12px; font-style: italic; }
 
 .log-entry {
-  font-family: monospace;
-  font-size: 11px;
-  padding: 2px 0;
-  display: flex;
-  gap: 8px;
-  border-left: 3px solid var(--border);
-  padding-left: 8px;
-  margin-bottom: 2px;
+  font-family: monospace; font-size: 11px; padding: 2px 0;
+  display: flex; gap: 8px;
+  border-left: 3px solid var(--border); padding-left: 8px; margin-bottom: 2px;
 }
 
 .log-entry.added { border-left-color: var(--success); }
 .log-entry.updated { border-left-color: var(--accent); }
 .log-entry.removed { border-left-color: var(--danger); }
-
 .log-time { color: var(--text-muted); }
 .log-type { font-weight: 600; min-width: 60px; }
 .log-entry.added .log-type { color: var(--success); }
@@ -421,55 +393,25 @@ function toggleStatus() {
 .log-entry.removed .log-type { color: var(--danger); }
 .log-msg { color: var(--text); }
 
-/* List display */
 .list-display {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 12px;
-  background: var(--surface-raised);
-  border-radius: 6px;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 12px; background: var(--surface-raised); border-radius: 6px;
 }
 
-.entity-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
+.entity-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 
 .chip {
-  font-size: 12px;
-  padding: 3px 10px;
-  border-radius: 4px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  font-size: 12px; padding: 3px 10px; border-radius: 4px;
+  background: var(--surface); border: 1px solid var(--border);
 }
 
-.chip.active {
-  background: var(--success-bg);
-  border-color: var(--success);
-  color: var(--success);
-}
+.chip.active { background: var(--success-bg); border-color: var(--success); color: var(--success); }
+.chip.inactive { background: var(--danger-bg); border-color: var(--danger); color: var(--danger); }
 
-.chip.inactive {
-  background: var(--danger-bg);
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-/* Query columns */
-.query-columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
+.query-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
 .query-col {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 12px;
-  background: var(--surface-raised);
-  border-radius: 6px;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 12px; background: var(--surface-raised); border-radius: 6px;
 }
 </style>
