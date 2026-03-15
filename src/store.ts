@@ -10,14 +10,13 @@
  * Just Vue reactivity doing what it does best.
  */
 
-import { computed, shallowRef, triggerRef } from 'vue'
+import { computed, shallowRef } from 'vue'
 import type { ComputedRef, ShallowRef } from 'vue'
 import type {
   EntityEvent,
   EntityKey,
   EntityRecord,
   EntityStore,
-  ReadonlyEntityMap,
 } from './types'
 
 type EntityListener = (event: EntityEvent) => void
@@ -225,16 +224,6 @@ export function createEntityStore(): EntityStore {
       return ref != null && ref.value !== undefined
     },
 
-    query<T>(queryFn: (entities: ReadonlyEntityMap) => T): ComputedRef<T> {
-      // Level 1: wraps Vue computed() — brute force.
-      // The queryFn reads from the ReadonlyEntityMap, which reads from
-      // reactive refs. Vue's dependency tracking handles the rest.
-      //
-      // Level 2/3: this method would be replaced with an IVM-aware
-      // or SQLite-backed implementation. The signature stays the same.
-      return computed(() => queryFn(readonlyView))
-    },
-
     subscribe(listener, filter) {
       const entry = { fn: listener, filter }
       listeners.add(entry)
@@ -268,41 +257,6 @@ export function createEntityStore(): EntityStore {
         const entityType = key.slice(0, separatorIndex)
         const id = key.slice(separatorIndex + 1)
         store.set(entityType, id, data)
-      }
-    },
-  }
-
-  // ── ReadonlyEntityMap (passed to query functions) ──
-
-  const readonlyView: ReadonlyEntityMap = {
-    get(entityType, id) {
-      return storage.get(entityType)?.get(id)?.value
-    },
-
-    getByType(entityType) {
-      const typeMap = storage.get(entityType)
-      if (!typeMap) return []
-      const result: EntityRecord[] = []
-      // Track the type version for reactivity
-      void getTypeVersion(entityType).value
-      for (const ref of typeMap.values()) {
-        if (ref.value !== undefined) {
-          result.push(ref.value)
-        }
-      }
-      return result
-    },
-
-    has(entityType, id) {
-      const ref = storage.get(entityType)?.get(id)
-      return ref != null && ref.value !== undefined
-    },
-
-    *keys() {
-      for (const [entityType, typeMap] of storage) {
-        for (const id of typeMap.keys()) {
-          yield toEntityKey(entityType, id)
-        }
       }
     },
   }

@@ -161,7 +161,7 @@ export function PiniaColadaNormalizer(
               track()
               // Denormalize on read: replace EntityRefs with live store data
               if (rawState.status === 'success' && rawState.data != null) {
-                const data = cachedDenormalize(rawState.data, entityStoreInstance, denormCache)
+                const data = denormalize(rawState.data, entityStoreInstance, denormCache)
                 // Structural sharing: return the same state object if data hasn't changed
                 if (data === cachedData && cachedState != null) {
                   return cachedState
@@ -204,14 +204,9 @@ export function PiniaColadaNormalizer(
         })
       }
 
-      // ── remove: cleanup ──────────────────────────
       // Entities persist in the store even after query entries are GC'd.
       // This is intentional for WebSocket scenarios where entities
       // outlive individual queries.
-      // Future: optional reference counting for entity GC.
-      if (name === 'remove') {
-        // cleanup hook placeholder
-      }
     })
   }
 }
@@ -453,92 +448,31 @@ function identifyEntity(
  * Denormalizes data by recursively replacing EntityRef references with live
  * entity data from the store.
  *
- * This is used on the read path (customRef getter) to reconstruct the original
- * data shape with reactive entity data. Entities in the store may themselves
- * contain EntityRefs (nested entities), so denormalization must be recursive.
+ * Used on the read path (customRef getter) and available as a public utility.
+ * Entities in the store may themselves contain EntityRefs (nested entities),
+ * so denormalization must be recursive.
  *
- * Uses a WeakSet for circular reference protection.
+ * Supports structural sharing via an optional cache parameter: when provided,
+ * returns the same object reference for entities whose ShallowRef value hasn't
+ * changed — preventing unnecessary re-renders.
+ *
  * Uses store.has() before store.get() to avoid creating phantom refs.
+ * Uses a WeakSet for circular reference protection.
  */
 export function denormalize(
   data: unknown,
   store: EntityStore,
+  cache?: Map<string, { entity: EntityRecord; result: unknown }>,
 ): unknown {
   const visited = new WeakSet<object>()
-  return walkAndDenormalize(data, store, visited)
-}
-
-/**
- * Cached denormalization for use inside the customRef getter.
- * Provides structural sharing: returns the same object reference for entities
- * whose ShallowRef value hasn't changed since the last denormalization.
- *
- * This prevents unnecessary re-renders when an entity store update triggers
- * the customRef getter but most entities in the query result are unchanged.
- *
- * @internal
- */
-function cachedDenormalize(
-  data: unknown,
-  store: EntityStore,
-  cache: Map<string, { entity: EntityRecord; result: unknown }>,
-): unknown {
-  const visited = new WeakSet<object>()
-  return walkAndDenormalizeCached(data, store, visited, cache)
+  return walkAndDenormalize(data, store, visited, cache)
 }
 
 function walkAndDenormalize(
   data: unknown,
   store: EntityStore,
   visited: WeakSet<object>,
-): unknown {
-  if (data == null || typeof data !== 'object') {
-    return data
-  }
-
-  // Circular reference protection
-  if (visited.has(data as object)) {
-    return data
-  }
-  visited.add(data as object)
-
-  // Arrays — walk each element
-  if (Array.isArray(data)) {
-    return data.map((item) => walkAndDenormalize(item, store, visited))
-  }
-
-  // Check if this is an entity reference (Symbol-based, Issue #13 fix)
-  const record = data as Record<string | symbol, unknown>
-  if (isEntityRef(record)) {
-    const entityType = record.entityType as string
-    const id = record.id as string
-    // Check existence first to avoid creating phantom refs
-    if (!store.has(entityType, id)) return undefined
-    const entity = store.get(entityType, id).value
-    if (entity == null) return undefined
-    // Recursively denormalize the entity's fields (they may contain refs too)
-    return walkAndDenormalize(entity, store, visited)
-  }
-
-  // Walk children
-  const result: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(record)) {
-    result[key] = walkAndDenormalize(value, store, visited)
-  }
-  return result
-}
-
-/**
- * Cached version of walkAndDenormalize.
- * For EntityRef resolution, checks if the entity's ShallowRef value is the
- * same object as last time. If so, returns the cached denormalized subtree
- * (same reference — Vue's computed sees no change → no re-render).
- */
-function walkAndDenormalizeCached(
-  data: unknown,
-  store: EntityStore,
-  visited: WeakSet<object>,
-  cache: Map<string, { entity: EntityRecord; result: unknown }>,
+  cache?: Map<string, { entity: EntityRecord; result: unknown }>,
 ): unknown {
   if (data == null || typeof data !== 'object') {
     return data
@@ -552,11 +486,10 @@ function walkAndDenormalizeCached(
   if (Array.isArray(data)) {
     let changed = false
     const result = data.map((item) => {
-      const newItem = walkAndDenormalizeCached(item, store, visited, cache)
+      const newItem = walkAndDenormalize(item, store, visited, cache)
       if (newItem !== item) changed = true
       return newItem
     })
-    // Structural sharing: return original array if no elements changed
     return changed ? result : data
   }
 
@@ -564,32 +497,34 @@ function walkAndDenormalizeCached(
   if (isEntityRef(record)) {
     const entityType = record.entityType as string
     const id = record.id as string
-    const key = `${entityType}:${id}`
 
     // Check existence first to avoid creating phantom refs
     if (!store.has(entityType, id)) return undefined
 
-    // Read the ShallowRef — this is tracked by the outer computed for reactivity
+    // Read the ShallowRef — tracked by the outer computed for reactivity
     const entity = store.get(entityType, id).value
     if (entity == null) return undefined
 
-    // Structural sharing: if entity object is the same reference, return cached result
-    const cached = cache.get(key)
-    if (cached && cached.entity === entity) {
-      return cached.result
+    // Structural sharing: if cache provided and entity ref unchanged, reuse result
+    if (cache) {
+      const cacheKey = `${entityType}:${id}`
+      const cached = cache.get(cacheKey)
+      if (cached && cached.entity === entity) {
+        return cached.result
+      }
+      const result = walkAndDenormalize(entity, store, visited, cache)
+      cache.set(cacheKey, { entity, result })
+      return result
     }
 
-    // Entity changed — recompute and cache
-    const result = walkAndDenormalizeCached(entity, store, visited, cache)
-    cache.set(key, { entity, result })
-    return result
+    return walkAndDenormalize(entity, store, visited, cache)
   }
 
   // Walk children with structural sharing
   let changed = false
   const result: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(record)) {
-    const newValue = walkAndDenormalizeCached(value, store, visited, cache)
+    const newValue = walkAndDenormalize(value, store, visited, cache)
     result[key] = newValue
     if (newValue !== value) changed = true
   }

@@ -107,19 +107,6 @@ export interface EntityStore {
    */
   has(entityType: string, id: string): boolean
 
-  // ── Queries (the IVM extensibility point) ───
-
-  /**
-   * Run a derived query against the store.
-   *
-   * Level 1 (in-memory): wraps Vue computed() — brute force, fine for < 10K entities.
-   * Level 2 (with indexes): uses manual index maps for O(k) lookups.
-   * Level 3 (SQLite): delegates to SQL query planner with indexes and triggers.
-   *
-   * The function signature stays the same regardless of backend.
-   */
-  query<T>(queryFn: (entities: ReadonlyEntityMap) => T): ComputedRef<T>
-
   // ── Subscriptions ───────────────────────────
 
   /**
@@ -151,17 +138,6 @@ export interface EntityStore {
    * Hydrate the store from a snapshot (SSR / persistence restore).
    */
   hydrate(snapshot: Record<EntityKey, EntityRecord>): void
-}
-
-/**
- * Read-only view of the entity map, passed to query functions.
- * This prevents accidental mutations inside derived queries.
- */
-export interface ReadonlyEntityMap {
-  get(entityType: string, id: string): EntityRecord | undefined
-  getByType(entityType: string): readonly EntityRecord[]
-  has(entityType: string, id: string): boolean
-  keys(): IterableIterator<EntityKey>
 }
 
 // ─────────────────────────────────────────────

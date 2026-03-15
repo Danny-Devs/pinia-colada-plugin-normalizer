@@ -22,5 +22,4 @@ export type {
   EntityDefinition,
   NormalizerPluginOptions,
   NormalizerQueryOptions,
-  ReadonlyEntityMap,
 } from './types'

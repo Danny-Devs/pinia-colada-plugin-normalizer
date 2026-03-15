@@ -131,21 +131,6 @@ describe('EntityStore (in-memory)', () => {
     })
   })
 
-  describe('query', () => {
-    it('runs a derived query', () => {
-      const store = createEntityStore()
-      store.set('contact', '1', { id: '1', name: 'Alice', status: 'active' })
-      store.set('contact', '2', { id: '2', name: 'Bob', status: 'inactive' })
-      store.set('contact', '3', { id: '3', name: 'Charlie', status: 'active' })
-
-      const activeContacts = store.query((entities) =>
-        entities.getByType('contact').filter((c: any) => c.status === 'active'),
-      )
-
-      expect(activeContacts.value).toHaveLength(2)
-    })
-  })
-
   describe('subscribe', () => {
     it('emits set events', () => {
       const store = createEntityStore()
