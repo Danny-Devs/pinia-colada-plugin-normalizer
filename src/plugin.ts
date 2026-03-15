@@ -273,9 +273,24 @@ export function PiniaColadaNormalizer(options: NormalizerPluginOptions = {}): Pi
                 // Short-circuit: skip normalization if same reference
                 if (incoming === rawState) return;
 
-                // Normalize on write: extract entities, replace with refs
+                // Normalize on write: extract entities, replace with refs.
+                // Wrapped in try/catch so a malformed response doesn't crash
+                // the query cache — falls back to storing raw data.
                 if (incoming.status === "success" && incoming.data != null) {
-                  const result = normalize(incoming.data, entityDefs, defaultIdField);
+                  let result: NormalizationResult;
+                  try {
+                    result = normalize(incoming.data, entityDefs, defaultIdField);
+                  } catch (err) {
+                    console.warn(
+                      "[pinia-colada-plugin-normalizer] normalize() threw — storing raw data.",
+                      err,
+                    );
+                    rawState = incoming;
+                    cachedState = null;
+                    cachedData = null;
+                    trigger();
+                    return;
+                  }
                   if (result.entities.length > 0) {
                     // Write entities to the store, respecting custom merge policies.
                     // Entities with a custom merge function are processed individually;

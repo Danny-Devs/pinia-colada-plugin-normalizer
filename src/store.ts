@@ -211,6 +211,8 @@ export function createEntityStore(): EntityStore {
       const previousData = existing?.value;
 
       if (existing) {
+        // Skip no-op: if existing value is identical reference, nothing changed
+        if (existing.value === data) return;
         // Full replacement — no merge, incoming data IS the entity
         existing.value = data;
       } else {
