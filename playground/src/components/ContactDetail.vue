@@ -4,20 +4,20 @@
  * Uses normalize: true — reads from the shared entity store.
  * Updates via entityStore.set() propagate here automatically.
  */
-import { computed } from 'vue'
-import { useQuery } from '@pinia/colada'
-import { fetchContact, type Contact } from '../api/mock'
+import { computed } from "vue";
+import { useQuery } from "@pinia/colada";
+import { fetchContact, type Contact } from "../api/mock";
 
-const props = defineProps<{ contactId: string | null; normalized: boolean }>()
+const props = defineProps<{ contactId: string | null; normalized: boolean }>();
 
-const enabled = computed(() => !!props.contactId)
+const enabled = computed(() => !!props.contactId);
 
 const { data: contact, status } = useQuery({
-  key: () => ['contacts', props.contactId!],
+  key: () => ["contacts", props.contactId!],
   query: () => fetchContact(props.contactId!),
   enabled,
   normalize: true,
-})
+});
 </script>
 
 <template>
@@ -54,23 +54,70 @@ const { data: contact, status } = useQuery({
 </template>
 
 <style scoped>
-.panel { padding: 16px; height: 100%; }
-.panel-header { margin-bottom: 12px; }
-h2 { margin: 0; font-size: 16px; color: var(--text); display: inline; }
+.panel {
+  padding: 16px;
+  height: 100%;
+}
+.panel-header {
+  margin-bottom: 12px;
+}
+h2 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text);
+  display: inline;
+}
 .query-key {
-  font-size: 11px; color: var(--text-muted); background: var(--surface-raised);
-  padding: 2px 6px; border-radius: 3px; margin-left: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--surface-raised);
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: 8px;
 }
 .mode-badge {
-  font-size: 10px; padding: 2px 8px; border-radius: 10px; margin-left: 8px;
-  font-weight: 600; vertical-align: middle;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: 8px;
+  font-weight: 600;
+  vertical-align: middle;
 }
-.mode-badge.on { background: var(--success-bg); color: var(--success); }
-.empty, .loading { color: var(--text-muted); font-style: italic; }
-.detail { display: flex; flex-direction: column; gap: 12px; }
-.field { display: flex; flex-direction: column; gap: 2px; }
-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-.value { font-size: 15px; color: var(--text); }
-.status-text.active { color: var(--success); font-weight: 500; }
-.status-text.inactive { color: var(--danger); font-weight: 500; }
+.mode-badge.on {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.empty,
+.loading {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.value {
+  font-size: 15px;
+  color: var(--text);
+}
+.status-text.active {
+  color: var(--success);
+  font-weight: 500;
+}
+.status-text.inactive {
+  color: var(--danger);
+  font-weight: 500;
+}
 </style>

@@ -6,7 +6,7 @@
  * @module pinia-colada-plugin-normalizer
  */
 
-import type { ComputedRef, ShallowRef } from 'vue'
+import type { ComputedRef, ShallowRef } from "vue";
 
 // ─────────────────────────────────────────────
 // Entity Store Interface (the swappable contract)
@@ -16,14 +16,14 @@ import type { ComputedRef, ShallowRef } from 'vue'
  * A single entity record in the store.
  * Entities are plain objects with at least an ID field.
  */
-export type EntityRecord = Record<string, unknown>
+export type EntityRecord = Record<string, unknown>;
 
 /**
  * Composite key that uniquely identifies an entity: type + id.
  *
  * @example 'contact:42', 'order:abc-123'
  */
-export type EntityKey = `${string}:${string}`
+export type EntityKey = `${string}:${string}`;
 
 // ─────────────────────────────────────────────
 // Entity Type Registry
@@ -54,8 +54,9 @@ export type EntityKey = `${string}:${string}`
 export interface EntityRegistry {}
 
 /** Resolve entity type from registry, falling back to EntityRecord. */
-export type ResolveEntity<K extends string> =
-  K extends keyof EntityRegistry ? EntityRegistry[K] : EntityRecord
+export type ResolveEntity<K extends string> = K extends keyof EntityRegistry
+  ? EntityRegistry[K]
+  : EntityRecord;
 
 /**
  * Event emitted when the entity store changes.
@@ -64,17 +65,17 @@ export type ResolveEntity<K extends string> =
  */
 export interface EntityEvent<T extends EntityRecord = EntityRecord> {
   /** The type of change */
-  type: 'set' | 'remove'
+  type: "set" | "remove";
   /** Entity type (e.g., 'contact', 'order') */
-  entityType: string
+  entityType: string;
   /** Entity ID */
-  id: string
+  id: string;
   /** The full entity key */
-  key: EntityKey
+  key: EntityKey;
   /** The entity data (undefined for 'remove' events) */
-  data: T | undefined
+  data: T | undefined;
   /** The previous entity data (undefined if entity didn't exist before) */
-  previousData: T | undefined
+  previousData: T | undefined;
 }
 
 /**
@@ -98,8 +99,12 @@ export interface EntityStore {
    *
    * Use `replace()` instead if you need to overwrite the entity completely.
    */
-  set<K extends string & keyof EntityRegistry>(entityType: K, id: string, data: EntityRegistry[K]): void
-  set(entityType: string, id: string, data: EntityRecord): void
+  set<K extends string & keyof EntityRegistry>(
+    entityType: K,
+    id: string,
+    data: EntityRegistry[K],
+  ): void;
+  set(entityType: string, id: string, data: EntityRecord): void;
 
   /**
    * Store an entity with full replacement (no merge).
@@ -109,20 +114,24 @@ export interface EntityStore {
    * Use this when you know the incoming data is the complete entity
    * (e.g., from a full server response or when the server intentionally removed fields).
    */
-  replace<K extends string & keyof EntityRegistry>(entityType: K, id: string, data: EntityRegistry[K]): void
-  replace(entityType: string, id: string, data: EntityRecord): void
+  replace<K extends string & keyof EntityRegistry>(
+    entityType: K,
+    id: string,
+    data: EntityRegistry[K],
+  ): void;
+  replace(entityType: string, id: string, data: EntityRecord): void;
 
   /**
    * Store multiple entities at once (batch write).
    * Uses shallow merge (same as `set()`).
    * More efficient than calling set() in a loop for backends that support transactions.
    */
-  setMany(entities: Array<{ entityType: string; id: string; data: EntityRecord }>): void
+  setMany(entities: Array<{ entityType: string; id: string; data: EntityRecord }>): void;
 
   /**
    * Remove an entity from the store.
    */
-  remove(entityType: string, id: string): void
+  remove(entityType: string, id: string): void;
 
   // ── Reads ───────────────────────────────────
 
@@ -130,15 +139,20 @@ export interface EntityStore {
    * Get a single entity by type and ID.
    * Returns a reactive ref that updates when the entity changes.
    */
-  get<K extends string & keyof EntityRegistry>(entityType: K, id: string): ShallowRef<EntityRegistry[K] | undefined>
-  get(entityType: string, id: string): ShallowRef<EntityRecord | undefined>
+  get<K extends string & keyof EntityRegistry>(
+    entityType: K,
+    id: string,
+  ): ShallowRef<EntityRegistry[K] | undefined>;
+  get(entityType: string, id: string): ShallowRef<EntityRecord | undefined>;
 
   /**
    * Get all entities of a given type.
    * Returns a computed ref that updates when any entity of that type changes.
    */
-  getByType<K extends string & keyof EntityRegistry>(entityType: K): ComputedRef<EntityRegistry[K][]>
-  getByType(entityType: string): ComputedRef<EntityRecord[]>
+  getByType<K extends string & keyof EntityRegistry>(
+    entityType: K,
+  ): ComputedRef<EntityRegistry[K][]>;
+  getByType(entityType: string): ComputedRef<EntityRecord[]>;
 
   /**
    * Get all entities of a given type as id+data pairs.
@@ -149,12 +163,12 @@ export interface EntityStore {
    * IDs to field values. Unlike `getByType()` (which returns data only),
    * this preserves the ID that the store uses internally.
    */
-  getEntriesByType(entityType: string): Array<{ id: string; data: EntityRecord }>
+  getEntriesByType(entityType: string): Array<{ id: string; data: EntityRecord }>;
 
   /**
    * Check if an entity exists in the store.
    */
-  has(entityType: string, id: string): boolean
+  has(entityType: string, id: string): boolean;
 
   // ── Subscriptions ───────────────────────────
 
@@ -173,11 +187,8 @@ export interface EntityStore {
   subscribe<K extends string & keyof EntityRegistry>(
     listener: (event: EntityEvent<EntityRegistry[K]>) => void,
     filter: { entityType: K },
-  ): () => void
-  subscribe(
-    listener: (event: EntityEvent) => void,
-    filter?: { entityType?: string },
-  ): () => void
+  ): () => void;
+  subscribe(listener: (event: EntityEvent) => void, filter?: { entityType?: string }): () => void;
 
   // ── Reference counting (GC support) ────────
 
@@ -187,13 +198,13 @@ export interface EntityStore {
    * Entities created via direct `set()` (e.g., WebSocket) are untracked
    * and will NOT be collected by `gc()`.
    */
-  retain(entityType: string, id: string): void
+  retain(entityType: string, id: string): void;
 
   /**
    * Decrement the reference count for an entity.
    * Called by the plugin when a query is removed or its entities change.
    */
-  release(entityType: string, id: string): void
+  release(entityType: string, id: string): void;
 
   /**
    * Remove entities with zero or negative reference counts.
@@ -202,24 +213,24 @@ export interface EntityStore {
    *
    * @returns Array of removed entity keys (e.g., ['contact:42', 'order:5'])
    */
-  gc(): string[]
+  gc(): string[];
 
   // ── Lifecycle ───────────────────────────────
 
   /**
    * Clear all entities from the store.
    */
-  clear(): void
+  clear(): void;
 
   /**
    * Get a snapshot of all entities (for serialization / SSR hydration).
    */
-  toJSON(): Record<EntityKey, EntityRecord>
+  toJSON(): Record<EntityKey, EntityRecord>;
 
   /**
    * Hydrate the store from a snapshot (SSR / persistence restore).
    */
-  hydrate(snapshot: Record<EntityKey, EntityRecord>): void
+  hydrate(snapshot: Record<EntityKey, EntityRecord>): void;
 }
 
 // ─────────────────────────────────────────────
@@ -253,7 +264,7 @@ export interface EntityDefinition<T extends EntityRecord = EntityRecord> {
    * The field name that contains the entity's unique ID.
    * @default 'id'
    */
-  idField?: string & keyof T | (string & {})
+  idField?: (string & keyof T) | (string & {});
 
   /**
    * A function to extract the ID from an entity.
@@ -270,7 +281,7 @@ export interface EntityDefinition<T extends EntityRecord = EntityRecord> {
    *   return `${entity.orgId}-${entity.userId}`
    * }
    */
-  getId?: (entity: T) => string | null | undefined
+  getId?: (entity: T) => string | null | undefined;
 
   /**
    * Custom merge function for this entity type.
@@ -287,7 +298,7 @@ export interface EntityDefinition<T extends EntityRecord = EntityRecord> {
    *   replies: [...(existing.replies || []), ...(incoming.replies || [])],
    * })
    */
-  merge?: (existing: T, incoming: T) => T
+  merge?: (existing: T, incoming: T) => T;
 }
 
 /**
@@ -306,7 +317,7 @@ export interface EntityDefinition<T extends EntityRecord = EntityRecord> {
 export function defineEntity<T extends EntityRecord = EntityRecord>(
   config: EntityDefinition<T>,
 ): EntityDefinition<T> {
-  return config
+  return config;
 }
 
 // ─────────────────────────────────────────────
@@ -323,7 +334,7 @@ export interface NormalizerQueryOptions {
    * - `false`: skip normalization for this query
    * - Inherits from the global `autoNormalize` option if not set.
    */
-  normalize?: boolean
+  normalize?: boolean;
 }
 
 /**
@@ -342,13 +353,13 @@ export interface NormalizerPluginOptions {
    *   order: defineEntity({ idField: 'orderId' }),
    * }
    */
-  entities?: Record<string, EntityDefinition>
+  entities?: Record<string, EntityDefinition>;
 
   /**
    * The default field name to look for when auto-detecting entities.
    * @default 'id'
    */
-  defaultIdField?: string
+  defaultIdField?: string;
 
   /**
    * Custom EntityStore implementation.
@@ -356,14 +367,14 @@ export interface NormalizerPluginOptions {
    *
    * Swap this for IndexedDB, SQLite, or any other backend.
    */
-  store?: EntityStore
+  store?: EntityStore;
 
   /**
    * Whether to normalize query responses by default.
    * When false, only queries with `normalize: true` option are normalized.
    * @default false
    */
-  autoNormalize?: boolean
+  autoNormalize?: boolean;
 }
 
 // ─────────────────────────────────────────────
@@ -375,14 +386,14 @@ export interface NormalizerPluginOptions {
  * Using a Symbol prevents collision with any API data.
  * @internal
  */
-export const ENTITY_REF_MARKER = Symbol('pinia-colada-entity-ref')
+export const ENTITY_REF_MARKER = Symbol("pinia-colada-entity-ref");
 
 /**
  * Symbol key for storing normalization metadata in entry.ext.
  * Following the auto-refetch plugin pattern of using Symbols for ext keys.
  * @internal
  */
-export const NORM_META_KEY = Symbol('pinia-colada-norm-meta')
+export const NORM_META_KEY = Symbol("pinia-colada-norm-meta");
 
 /**
  * An entity reference that replaces the actual entity data in the query cache.
@@ -391,13 +402,13 @@ export const NORM_META_KEY = Symbol('pinia-colada-norm-meta')
  */
 export interface EntityRef {
   /** Symbol marker to identify this as a reference (not a string property) */
-  [ENTITY_REF_MARKER]: true
+  [ENTITY_REF_MARKER]: true;
   /** Entity type */
-  entityType: string
+  entityType: string;
   /** Entity ID */
-  id: string
+  id: string;
   /** Full entity key */
-  key: EntityKey
+  key: EntityKey;
 }
 
 /**
@@ -406,9 +417,9 @@ export interface EntityRef {
  */
 export interface NormMeta {
   /** Whether this entry has been normalized */
-  isNormalized: boolean
+  isNormalized: boolean;
   /** Entity keys extracted from this entry's data */
-  entityKeys: string[]
+  entityKeys: Set<string>;
 }
 
 /**
@@ -417,20 +428,18 @@ export interface NormMeta {
  */
 export interface NormalizationResult {
   /** The transformed data with entities replaced by references */
-  normalized: unknown
+  normalized: unknown;
   /** The entities extracted from the response */
-  entities: Array<{ entityType: string; id: string; data: EntityRecord }>
+  entities: Array<{ entityType: string; id: string; data: EntityRecord }>;
 }
 
 // ─────────────────────────────────────────────
 // Module Augmentation (Issue #5 fix)
 // ─────────────────────────────────────────────
 
-declare module '@pinia/colada' {
+declare module "@pinia/colada" {
   // eslint-disable-next-line unused-imports/no-unused-vars
   interface UseQueryOptions<TData, TError, TDataInitial> extends NormalizerQueryOptions {}
-
-  interface UseQueryOptionsGlobal extends NormalizerQueryOptions {}
 
   // eslint-disable-next-line unused-imports/no-unused-vars
   interface UseQueryEntryExtensions<TData, TError, TDataInitial> {
@@ -438,6 +447,6 @@ declare module '@pinia/colada' {
      * Normalization metadata for this entry.
      * Contains whether the entry was normalized and which entity keys were extracted.
      */
-    [NORM_META_KEY]: ShallowRef<NormMeta>
+    [NORM_META_KEY]: ShallowRef<NormMeta>;
   }
 }

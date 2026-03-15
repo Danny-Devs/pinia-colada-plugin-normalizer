@@ -18,9 +18,9 @@
  * @module pinia-colada-plugin-normalizer
  */
 
-import { customRef, onScopeDispose, shallowRef } from 'vue'
-import type { PiniaColadaPlugin } from '@pinia/colada'
-import { defineStore, type Pinia } from 'pinia'
+import { customRef, onScopeDispose, shallowRef } from "vue";
+import type { PiniaColadaPlugin } from "@pinia/colada";
+import { defineStore, type Pinia } from "pinia";
 import type {
   EntityRecord,
   EntityRef,
@@ -29,24 +29,24 @@ import type {
   EntityStore,
   EntityDefinition,
   NormMeta,
-} from './types'
-import { ENTITY_REF_MARKER, NORM_META_KEY } from './types'
-import { createEntityStore } from './store'
+} from "./types";
+import { ENTITY_REF_MARKER, NORM_META_KEY } from "./types";
+import { createEntityStore } from "./store";
 
 /**
  * Split an entity key like 'contact:42' into ['contact', '42'].
  * @internal
  */
 function splitEntityKey(key: string): [string, string] {
-  const idx = key.indexOf(':')
-  return [key.slice(0, idx), key.slice(idx + 1)]
+  const idx = key.indexOf(":");
+  return [key.slice(0, idx), key.slice(idx + 1)];
 }
 
 // ─────────────────────────────────────────────
 // SSR-safe entity store via defineStore
 // ─────────────────────────────────────────────
 
-const NORMALIZER_STORE_ID = '_pc_normalizer'
+const NORMALIZER_STORE_ID = "_pc_normalizer";
 
 /**
  * Pinia store that scopes the entity store per Pinia instance.
@@ -54,21 +54,31 @@ const NORMALIZER_STORE_ID = '_pc_normalizer'
  * @internal
  */
 const useNormalizerStore = /* @__PURE__ */ defineStore(NORMALIZER_STORE_ID, () => {
-  let store: EntityStore = createEntityStore()
-  let qCache: any = null
-  let eDefs: Record<string, EntityDefinition> = {}
-  let defIdField = 'id'
-  function setStore(s: EntityStore) { store = s }
-  function getStore() { return store }
-  function setQueryCache(qc: any) { qCache = qc }
-  function getQueryCache() { return qCache }
-  function setEntityDefs(defs: Record<string, EntityDefinition>, defaultId: string) {
-    eDefs = defs
-    defIdField = defaultId
+  let store: EntityStore = createEntityStore();
+  let qCache: any = null;
+  let eDefs: Record<string, EntityDefinition> = {};
+  let defIdField = "id";
+  function setStore(s: EntityStore) {
+    store = s;
   }
-  function getEntityDefs() { return { entityDefs: eDefs, defaultIdField: defIdField } }
-  return { getStore, setStore, getQueryCache, setQueryCache, setEntityDefs, getEntityDefs }
-})
+  function getStore() {
+    return store;
+  }
+  function setQueryCache(qc: any) {
+    qCache = qc;
+  }
+  function getQueryCache() {
+    return qCache;
+  }
+  function setEntityDefs(defs: Record<string, EntityDefinition>, defaultId: string) {
+    eDefs = defs;
+    defIdField = defaultId;
+  }
+  function getEntityDefs() {
+    return { entityDefs: eDefs, defaultIdField: defIdField };
+  }
+  return { getStore, setStore, getQueryCache, setQueryCache, setEntityDefs, getEntityDefs };
+});
 
 // ─────────────────────────────────────────────
 // Duplicate-install guard
@@ -81,7 +91,7 @@ const useNormalizerStore = /* @__PURE__ */ defineStore(NORMALIZER_STORE_ID, () =
  * one Pinia) are allowed — they just re-initialize the same config.
  * @internal
  */
-const installedPluginByPinia = /* @__PURE__ */ new WeakMap<Pinia, Function>()
+const installedPluginByPinia = /* @__PURE__ */ new WeakMap<Pinia, Function>();
 
 // ─────────────────────────────────────────────
 // Plugin Factory
@@ -115,39 +125,37 @@ const installedPluginByPinia = /* @__PURE__ */ new WeakMap<Pinia, Function>()
  * })
  * ```
  */
-export function PiniaColadaNormalizer(
-  options: NormalizerPluginOptions = {},
-): PiniaColadaPlugin {
+export function PiniaColadaNormalizer(options: NormalizerPluginOptions = {}): PiniaColadaPlugin {
   const {
     entities: entityDefs = {},
-    defaultIdField = 'id',
+    defaultIdField = "id",
     store: userStore,
     autoNormalize = false,
-  } = options
+  } = options;
 
   const pluginCallback: PiniaColadaPlugin = ({ queryCache, pinia, scope }) => {
     // Guard: prevent silent state overwrite from duplicate installation.
     // A different plugin callback on the same Pinia means two PiniaColadaNormalizer()
     // calls in the same plugins array — that's a bug. Re-installs from the same
     // callback (e.g., dualFactory sharing one Pinia across two app mounts) are fine.
-    const existingPlugin = installedPluginByPinia.get(pinia)
+    const existingPlugin = installedPluginByPinia.get(pinia);
     if (existingPlugin && existingPlugin !== pluginCallback) {
       throw new Error(
-        '[pinia-colada-plugin-normalizer] PiniaColadaNormalizer is already installed on this Pinia instance. '
-        + 'Installing it twice would silently overwrite entity definitions and query cache. '
-        + 'Remove the duplicate plugin registration.',
-      )
+        "[pinia-colada-plugin-normalizer] PiniaColadaNormalizer is already installed on this Pinia instance. " +
+          "Installing it twice would silently overwrite entity definitions and query cache. " +
+          "Remove the duplicate plugin registration.",
+      );
     }
-    installedPluginByPinia.set(pinia, pluginCallback)
+    installedPluginByPinia.set(pinia, pluginCallback);
 
     // Get the per-Pinia-instance normalizer store (SSR-safe)
-    const normalizerStore = useNormalizerStore(pinia)
+    const normalizerStore = useNormalizerStore(pinia);
     if (userStore) {
-      normalizerStore.setStore(userStore)
+      normalizerStore.setStore(userStore);
     }
-    normalizerStore.setQueryCache(queryCache)
-    normalizerStore.setEntityDefs(entityDefs, defaultIdField)
-    const entityStoreInstance = normalizerStore.getStore()
+    normalizerStore.setQueryCache(queryCache);
+    normalizerStore.setEntityDefs(entityDefs, defaultIdField);
+    const entityStoreInstance = normalizerStore.getStore();
 
     queryCache.$onAction(({ name, args }) => {
       // ── extend: initialize ext + customRef replacement ──
@@ -159,38 +167,38 @@ export function PiniaColadaNormalizer(
       // - getter: denormalizes on read (replace EntityRefs with live entity data)
       //
       // This follows the delay plugin's pattern of replacing entry.asyncStatus.
-      if (name === 'extend') {
-        const [entry] = args
+      if (name === "extend") {
+        const [entry] = args;
         scope.run(() => {
           // Initialize ext metadata
           entry.ext[NORM_META_KEY] = shallowRef<NormMeta>({
             isNormalized: false,
             entityKeys: new Set<string>(),
-          })
+          });
 
           // Check if this query should be normalized
-          const shouldNormalize = entry.options?.normalize ?? autoNormalize
-          if (!shouldNormalize) return
+          const shouldNormalize = entry.options?.normalize ?? autoNormalize;
+          if (!shouldNormalize) return;
 
           // Capture the current state value — this becomes our internal storage.
           // The customRef manages this directly instead of delegating to the
           // original ShallowRef.
-          let rawState = entry.state.value
+          let rawState = entry.state.value;
 
           // Per-entity denormalization cache for structural sharing.
           // Maps entityKey → { entity: last ShallowRef value, result: denormalized output }.
           // When an entity's ShallowRef value hasn't changed (same object reference),
           // we return the cached denormalized subtree — same reference, no re-renders.
-          const denormCache = new Map<string, { entity: EntityRecord; result: unknown }>()
+          const denormCache = new Map<string, { entity: EntityRecord; result: unknown }>();
 
           // Cached top-level state object — returned if denormalized data is the same ref.
-          type State = typeof rawState
-          let cachedState: State | null = null
-          let cachedData: unknown = null
+          type State = typeof rawState;
+          let cachedState: State | null = null;
+          let cachedData: unknown = null;
 
           // Shared trigger function — set inside customRef, used by the subscriber
           // to notify the customRef when a referenced entity changes.
-          let triggerCustomRef: (() => void) | null = null
+          let triggerCustomRef: (() => void) | null = null;
 
           // Invalidate denorm cache when a REFERENCED entity changes.
           // Two checks:
@@ -201,14 +209,14 @@ export function PiniaColadaNormalizer(
           //    that arrive after the first denormalization would never trigger
           //    a re-render because no reactive dependency was created for them.
           const unsubDenormWatcher = entityStoreInstance.subscribe((event) => {
-            const inCache = denormCache.has(event.key)
-            const inEntityKeys = !inCache
-              && entry.ext[NORM_META_KEY].value.entityKeys.has(event.key)
+            const inCache = denormCache.has(event.key);
+            const inEntityKeys =
+              !inCache && entry.ext[NORM_META_KEY].value.entityKeys.has(event.key);
 
             if (inCache || inEntityKeys) {
-              denormCache.clear()
-              cachedState = null
-              cachedData = null
+              denormCache.clear();
+              cachedState = null;
+              cachedData = null;
               // Trigger the customRef so consumers re-read denormalized data.
               // For entity updates, Vue reactivity from store.get().value would
               // also trigger re-reads. But for removals (shallowRef orphaned, not
@@ -216,132 +224,151 @@ export function PiniaColadaNormalizer(
               // first read), no reactive dep exists — we must trigger manually.
               // Calling trigger redundantly for updates is harmless (Vue batches).
               if (triggerCustomRef) {
-                triggerCustomRef()
+                triggerCustomRef();
               }
             }
-          })
+          });
 
           // Clean up subscription when the effect scope is disposed (SSR teardown).
           // This prevents memory leaks when the app is unmounted without going
           // through the 'remove' action for every entry.
-          onScopeDispose(unsubDenormWatcher)
+          onScopeDispose(unsubDenormWatcher);
 
           // Also store on the entry for cleanup on explicit entry removal.
           // Using a non-enumerable property to avoid polluting the entry.
-          Object.defineProperty(entry, '_normUnsub', {
+          Object.defineProperty(entry, "_normUnsub", {
             value: unsubDenormWatcher,
             configurable: true,
-          })
+          });
+
+          // Expose raw (normalized) state accessor for deleteEntity.
+          // This allows operating on EntityRefs directly for type-safe
+          // matching, avoiding cross-type false positives.
+          Object.defineProperty(entry, "_normRawState", {
+            get: () => rawState,
+            configurable: true,
+          });
 
           // Replace entry.state with a customRef that normalizes on write
           // and denormalizes on read.
           entry.state = customRef((track, trigger) => {
-            triggerCustomRef = trigger
+            triggerCustomRef = trigger;
             return {
               get(): State {
-              track()
-              // Denormalize on read: replace EntityRefs with live store data
-              if (rawState.status === 'success' && rawState.data != null) {
-                const data = denormalize(rawState.data, entityStoreInstance, denormCache)
-                // Structural sharing: return the same state object if data hasn't changed
-                if (data === cachedData && cachedState != null) {
-                  return cachedState
+                track();
+                // Denormalize on read: replace EntityRefs with live store data
+                if (rawState.status === "success" && rawState.data != null) {
+                  const data = denormalize(rawState.data, entityStoreInstance, denormCache);
+                  // Structural sharing: return the same state object if data hasn't changed
+                  if (data === cachedData && cachedState != null) {
+                    return cachedState;
+                  }
+                  cachedData = data;
+                  cachedState = { ...rawState, data } as State;
+                  return cachedState;
                 }
-                cachedData = data
-                cachedState = { ...rawState, data } as State
-                return cachedState
-              }
-              return rawState
-            },
-            set(incoming: State) {
-              // Short-circuit: skip normalization if same reference
-              if (incoming === rawState) return
+                return rawState;
+              },
+              set(incoming: State) {
+                // Short-circuit: skip normalization if same reference
+                if (incoming === rawState) return;
 
-              // Normalize on write: extract entities, replace with refs
-              if (incoming.status === 'success' && incoming.data != null) {
-                const result = normalize(incoming.data, entityDefs, defaultIdField)
-                if (result.entities.length > 0) {
-                  // Write entities to the store, respecting custom merge policies.
-                  // Entities with a custom merge function are processed individually;
-                  // the rest are batched for efficiency.
-                  const customMergeEntities = result.entities.filter(e => entityDefs[e.entityType]?.merge)
-                  const regularEntities = result.entities.filter(e => !entityDefs[e.entityType]?.merge)
+                // Normalize on write: extract entities, replace with refs
+                if (incoming.status === "success" && incoming.data != null) {
+                  const result = normalize(incoming.data, entityDefs, defaultIdField);
+                  if (result.entities.length > 0) {
+                    // Write entities to the store, respecting custom merge policies.
+                    // Entities with a custom merge function are processed individually;
+                    // the rest are batched for efficiency.
+                    const customMergeEntities = result.entities.filter(
+                      (e) => entityDefs[e.entityType]?.merge,
+                    );
+                    const regularEntities = result.entities.filter(
+                      (e) => !entityDefs[e.entityType]?.merge,
+                    );
 
-                  if (regularEntities.length > 0) {
-                    entityStoreInstance.setMany(regularEntities)
-                  }
-                  for (const entity of customMergeEntities) {
-                    const mergeFn = entityDefs[entity.entityType].merge!
-                    if (entityStoreInstance.has(entity.entityType, entity.id)) {
-                      const existing = entityStoreInstance.get(entity.entityType, entity.id).value!
-                      entityStoreInstance.replace(entity.entityType, entity.id, mergeFn(existing, entity.data))
-                    } else {
-                      entityStoreInstance.set(entity.entityType, entity.id, entity.data)
+                    if (regularEntities.length > 0) {
+                      entityStoreInstance.setMany(regularEntities);
                     }
-                  }
-
-                  // GC lifecycle: retain new keys FIRST, then release old ones.
-                  // This order prevents a transient zero-refcount window for
-                  // entities present in both old and new sets.
-                  const newEntityKeys = new Set(result.entities.map(
-                    (e) => `${e.entityType}:${e.id}`,
-                  ))
-                  for (const key of newEntityKeys) {
-                    const [type, id] = splitEntityKey(key)
-                    entityStoreInstance.retain(type, id)
-                  }
-                  const oldMeta = entry.ext[NORM_META_KEY].value
-                  if (oldMeta.isNormalized) {
-                    for (const key of oldMeta.entityKeys) {
-                      const [type, id] = splitEntityKey(key)
-                      entityStoreInstance.release(type, id)
+                    for (const entity of customMergeEntities) {
+                      const mergeFn = entityDefs[entity.entityType].merge!;
+                      if (entityStoreInstance.has(entity.entityType, entity.id)) {
+                        const existing = entityStoreInstance.get(
+                          entity.entityType,
+                          entity.id,
+                        ).value!;
+                        entityStoreInstance.replace(
+                          entity.entityType,
+                          entity.id,
+                          mergeFn(existing, entity.data),
+                        );
+                      } else {
+                        entityStoreInstance.set(entity.entityType, entity.id, entity.data);
+                      }
                     }
-                  }
 
-                  // Update ext metadata via ShallowRef .value
-                  entry.ext[NORM_META_KEY].value = {
-                    isNormalized: true,
-                    entityKeys: newEntityKeys,
-                  }
+                    // GC lifecycle: retain new keys FIRST, then release old ones.
+                    // This order prevents a transient zero-refcount window for
+                    // entities present in both old and new sets.
+                    const newEntityKeys = new Set(
+                      result.entities.map((e) => `${e.entityType}:${e.id}`),
+                    );
+                    for (const key of newEntityKeys) {
+                      const [type, id] = splitEntityKey(key);
+                      entityStoreInstance.retain(type, id);
+                    }
+                    const oldMeta = entry.ext[NORM_META_KEY].value;
+                    if (oldMeta.isNormalized) {
+                      for (const key of oldMeta.entityKeys) {
+                        const [type, id] = splitEntityKey(key);
+                        entityStoreInstance.release(type, id);
+                      }
+                    }
 
-                  rawState = { ...incoming, data: result.normalized } as State
+                    // Update ext metadata via ShallowRef .value
+                    entry.ext[NORM_META_KEY].value = {
+                      isNormalized: true,
+                      entityKeys: newEntityKeys,
+                    };
+
+                    rawState = { ...incoming, data: result.normalized } as State;
+                  } else {
+                    rawState = incoming;
+                  }
                 } else {
-                  rawState = incoming
+                  rawState = incoming;
                 }
-              } else {
-                rawState = incoming
-              }
-              // Invalidate top-level cache on any setter call
-              cachedState = null
-              cachedData = null
-              trigger()
-            },
-            }
-          }) as typeof entry.state
-        })
+                // Invalidate top-level cache on any setter call
+                cachedState = null;
+                cachedData = null;
+                trigger();
+              },
+            };
+          }) as typeof entry.state;
+        });
       }
 
       // ── remove: release entity refs for GC + cleanup subscription ──
       // When a query entry is removed (GC or manual), release its entity keys
       // so gc() can collect unreferenced entities, and unsubscribe the
       // denorm cache watcher to prevent memory leaks.
-      if (name === 'remove') {
-        const [entry] = args
-        const meta = (entry as any).ext?.[NORM_META_KEY]?.value as NormMeta | undefined
+      if (name === "remove") {
+        const [entry] = args;
+        const meta = (entry as any).ext?.[NORM_META_KEY]?.value as NormMeta | undefined;
         if (meta?.isNormalized) {
           for (const key of meta.entityKeys) {
-            const [type, id] = splitEntityKey(key)
-            entityStoreInstance.release(type, id)
+            const [type, id] = splitEntityKey(key);
+            entityStoreInstance.release(type, id);
           }
         }
         // Unsubscribe the denorm cache watcher
-        const unsub = (entry as any)._normUnsub as (() => void) | undefined
-        if (unsub) unsub()
+        const unsub = (entry as any)._normUnsub as (() => void) | undefined;
+        if (unsub) unsub();
       }
-    })
-  }
+    });
+  };
 
-  return pluginCallback
+  return pluginCallback;
 }
 
 // ─────────────────────────────────────────────
@@ -375,8 +402,8 @@ export function PiniaColadaNormalizer(
  * ```
  */
 export function useEntityStore(pinia?: Pinia): EntityStore {
-  const normalizerStore = pinia ? useNormalizerStore(pinia) : useNormalizerStore()
-  return normalizerStore.getStore()
+  const normalizerStore = pinia ? useNormalizerStore(pinia) : useNormalizerStore();
+  return normalizerStore.getStore();
 }
 
 /**
@@ -412,33 +439,29 @@ export function useEntityStore(pinia?: Pinia): EntityStore {
  * })
  * ```
  */
-export function invalidateEntity(
-  entityType: string,
-  id: string,
-  pinia?: Pinia,
-): void {
-  const normalizerStore = pinia ? useNormalizerStore(pinia) : useNormalizerStore()
-  const queryCache = normalizerStore.getQueryCache()
+export function invalidateEntity(entityType: string, id: string, pinia?: Pinia): void {
+  const normalizerStore = pinia ? useNormalizerStore(pinia) : useNormalizerStore();
+  const queryCache = normalizerStore.getQueryCache();
 
   if (!queryCache) {
     throw new Error(
-      '[pinia-colada-plugin-normalizer] invalidateEntity() called before plugin installation. '
-      + 'Make sure PiniaColadaNormalizer is installed via PiniaColada plugins option.',
-    )
+      "[pinia-colada-plugin-normalizer] invalidateEntity() called before plugin installation. " +
+        "Make sure PiniaColadaNormalizer is installed via PiniaColada plugins option.",
+    );
   }
 
-  const entityKey = `${entityType}:${id}`
+  const entityKey = `${entityType}:${id}`;
 
   // Scan all query entries for ones that reference this entity
   for (const entry of queryCache.getEntries()) {
-    const meta = (entry as any).ext?.[NORM_META_KEY]?.value as NormMeta | undefined
+    const meta = (entry as any).ext?.[NORM_META_KEY]?.value as NormMeta | undefined;
     if (meta?.isNormalized && meta.entityKeys.has(entityKey)) {
       // Refetch this entry — queryCache.fetch() re-runs the query function
       // and updates the entry state, which flows through our customRef setter.
       queryCache.fetch(entry).catch(() => {
         // Silently ignore fetch errors (entry may have been GC'd,
         // query may be disabled, etc.)
-      })
+      });
     }
   }
 }
@@ -473,18 +496,18 @@ export function updateQueryData(
   updater: (currentData: unknown) => unknown,
   pinia?: Pinia,
 ): void {
-  const normalizerStore = pinia ? useNormalizerStore(pinia) : useNormalizerStore()
-  const queryCache = normalizerStore.getQueryCache()
+  const normalizerStore = pinia ? useNormalizerStore(pinia) : useNormalizerStore();
+  const queryCache = normalizerStore.getQueryCache();
 
   if (!queryCache) {
     throw new Error(
-      '[pinia-colada-plugin-normalizer] updateQueryData() called before plugin installation.',
-    )
+      "[pinia-colada-plugin-normalizer] updateQueryData() called before plugin installation.",
+    );
   }
 
   // Use Pinia Colada's built-in setQueryData — it reads via our getter
   // (denormalized) and writes via our setter (normalizes).
-  queryCache.setQueryData(key, updater)
+  queryCache.setQueryData(key, updater);
 }
 
 /**
@@ -523,145 +546,132 @@ export function updateQueryData(
  * ```
  */
 export function useNormalizeMutation(pinia?: Pinia): (data: unknown) => void {
-  const normalizerStore = pinia ? useNormalizerStore(pinia) : useNormalizerStore()
-  const entityStoreInstance = normalizerStore.getStore()
-  const { entityDefs, defaultIdField } = normalizerStore.getEntityDefs()
+  const normalizerStore = pinia ? useNormalizerStore(pinia) : useNormalizerStore();
+  const entityStoreInstance = normalizerStore.getStore();
+  const { entityDefs, defaultIdField } = normalizerStore.getEntityDefs();
 
   return (data: unknown) => {
-    const result = normalize(data, entityDefs, defaultIdField)
+    const result = normalize(data, entityDefs, defaultIdField);
     if (result.entities.length > 0) {
-      entityStoreInstance.setMany(result.entities)
+      entityStoreInstance.setMany(result.entities);
     }
-  }
+  };
 }
 
 /**
- * Remove an entity from ALL normalized queries that reference it.
+ * Delete an entity completely — removes from the entity store AND
+ * from all normalized query data that references it.
  *
  * Scans all query entries, finds ones that reference the entity,
  * and removes it from any arrays in the query data. Non-array data
  * is left unchanged (use `invalidateEntity` to refetch instead).
  *
- * Also removes the entity from the entity store. This is the
- * complete "delete entity" operation — removes from store + all views.
+ * Uses the normalized (raw) state for type-safe matching — EntityRefs
+ * carry both `entityType` and `id`, so there's no ambiguity even when
+ * multiple entity types share the same `idField` name.
  *
  * @example
  * ```typescript
- * import { removeEntityFromAllQueries } from 'pinia-colada-plugin-normalizer'
+ * import { deleteEntity } from 'pinia-colada-plugin-normalizer'
  *
  * // Delete a contact — removes from entity store + all list queries:
- * removeEntityFromAllQueries('contact', '42')
+ * deleteEntity('contact', '42')
  *
  * // In a WebSocket handler:
  * ws.on('CONTACT_DELETED', ({ contactId }) => {
- *   removeEntityFromAllQueries('contact', contactId)
+ *   deleteEntity('contact', contactId)
  * })
  * ```
  */
-export function removeEntityFromAllQueries(
-  entityType: string,
-  id: string,
-  pinia?: Pinia,
-): void {
-  const normalizerStore = pinia ? useNormalizerStore(pinia) : useNormalizerStore()
-  const queryCache = normalizerStore.getQueryCache()
-  const entityStoreInstance = normalizerStore.getStore()
-  const { entityDefs, defaultIdField } = normalizerStore.getEntityDefs()
+export function deleteEntity(entityType: string, id: string, pinia?: Pinia): void {
+  const normalizerStore = pinia ? useNormalizerStore(pinia) : useNormalizerStore();
+  const queryCache = normalizerStore.getQueryCache();
+  const entityStoreInstance = normalizerStore.getStore();
 
   if (!queryCache) {
     throw new Error(
-      '[pinia-colada-plugin-normalizer] removeEntityFromAllQueries() called before plugin installation.',
-    )
+      "[pinia-colada-plugin-normalizer] deleteEntity() called before plugin installation.",
+    );
   }
 
-  const entityKey = `${entityType}:${id}`
+  const entityKey = `${entityType}:${id}`;
 
-  // Determine the ID field for this entity type
-  const def = entityDefs[entityType]
-  const idField = def?.idField ?? defaultIdField
-
-  // Update queries FIRST (before removing from store), so that
-  // denormalization still resolves the entity for ID matching.
-  // Scan all normalized query entries that reference this entity.
+  // Operate on NORMALIZED data (rawState) which contains EntityRefs.
+  // EntityRefs have explicit entityType + id, so matching is type-safe —
+  // no false positives when different entity types share the same idField.
   for (const entry of queryCache.getEntries()) {
-    const meta = (entry as any).ext?.[NORM_META_KEY]?.value as NormMeta | undefined
-    if (!meta?.isNormalized || !meta.entityKeys.has(entityKey)) continue
+    const meta = (entry as any).ext?.[NORM_META_KEY]?.value as NormMeta | undefined;
+    if (!meta?.isNormalized || !meta.entityKeys.has(entityKey)) continue;
 
-    // Read denormalized data (via customRef getter)
-    const currentState = entry.state.value
-    if (currentState.status !== 'success' || currentState.data == null) continue
+    // Access the raw normalized state (contains EntityRefs, not denormalized data)
+    const rawState = (entry as any)._normRawState;
+    if (!rawState || rawState.status !== "success" || rawState.data == null) continue;
 
-    // Remove the entity from arrays in the data
-    const newData = removeFromData(currentState.data, entityType, id, idField, def?.getId)
-    if (newData !== currentState.data) {
-      // Write back through customRef setter (re-normalizes)
-      entry.state.value = { ...currentState, data: newData }
+    // Remove matching EntityRefs from arrays in the normalized data
+    const newData = removeRefFromData(rawState.data, entityType, id);
+    if (newData !== rawState.data) {
+      // Denormalize the cleaned data, then write back through the customRef
+      // setter which re-normalizes it. This ensures all internal state
+      // (rawState, entityKeys, GC refcounts) stays consistent.
+      const denormalized = denormalize(newData, entityStoreInstance);
+      const currentState = entry.state.value;
+      entry.state.value = { ...currentState, data: denormalized };
     }
   }
 
   // Remove from entity store AFTER updating queries
-  entityStoreInstance.remove(entityType, id)
+  entityStoreInstance.remove(entityType, id);
 }
 
 /**
- * Recursively remove entities matching type+id from arrays in data.
+ * Recursively remove EntityRefs matching entityType+id from arrays
+ * in normalized data. Operates on the raw normalized state where
+ * entities are represented as EntityRef objects with explicit
+ * entityType and id — no heuristic field matching needed.
+ *
  * Returns the same reference if nothing changed (structural sharing).
  * @internal
  */
-function removeFromData(
-  data: unknown,
-  entityType: string,
-  id: string,
-  idField: string,
-  getId?: (entity: EntityRecord) => string | null | undefined,
-): unknown {
-  if (data == null || typeof data !== 'object') return data
+function removeRefFromData(data: unknown, entityType: string, id: string): unknown {
+  if (data == null || typeof data !== "object") return data;
 
   if (Array.isArray(data)) {
     const filtered = data.filter((item) => {
-      if (item == null || typeof item !== 'object') return true
-      const record = item as EntityRecord
-      // Check by getId function first (most specific)
-      if (getId) {
-        const extractedId = getId(record)
-        if (extractedId != null && String(extractedId) === id) return false
+      if (item == null || typeof item !== "object") return true;
+      const record = item as Record<string | symbol, unknown>;
+      // Match EntityRefs by their explicit entityType + id
+      if (isEntityRef(record)) {
+        return !(record.entityType === entityType && record.id === id);
       }
-      // Check by idField — only match if we can confirm the entity type
-      // to avoid false positives across different entity types sharing IDs
-      if (record[idField] != null && String(record[idField]) === id) {
-        // If __typename is present, verify it matches
-        if (record.__typename != null) {
-          if (record.__typename === entityType) return false
-        } else {
-          // No __typename — trust the idField match (user used defineEntity)
-          return false
-        }
-      }
-      return true
-    })
+      return true;
+    });
     if (filtered.length === data.length) {
-      // Nothing removed — recurse into items
-      let changed = false
+      // Nothing removed at this level — recurse into items
+      let changed = false;
       const result = data.map((item) => {
-        const newItem = removeFromData(item, entityType, id, idField, getId)
-        if (newItem !== item) changed = true
-        return newItem
-      })
-      return changed ? result : data
+        const newItem = removeRefFromData(item, entityType, id);
+        if (newItem !== item) changed = true;
+        return newItem;
+      });
+      return changed ? result : data;
     }
-    return filtered
+    // Items were filtered out — also recurse into remaining items
+    return filtered.map((item) => removeRefFromData(item, entityType, id));
   }
 
+  // Skip EntityRefs themselves (they're leaf nodes in normalized data)
+  const record = data as Record<string | symbol, unknown>;
+  if (isEntityRef(record)) return data;
+
   // Walk object properties
-  const record = data as Record<string, unknown>
-  let changed = false
-  const result: Record<string, unknown> = {}
+  let changed = false;
+  const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
-    const newValue = removeFromData(value, entityType, id, idField, getId)
-    result[key] = newValue
-    if (newValue !== value) changed = true
+    const newValue = removeRefFromData(value, entityType, id);
+    result[key] = newValue;
+    if (newValue !== value) changed = true;
   }
-  return changed ? result : data
+  return changed ? result : data;
 }
 
 // ─────────────────────────────────────────────
@@ -676,60 +686,67 @@ function removeFromData(
  * This is the "hybrid" approach — normalize selectively.
  *
  * Uses a WeakSet for circular reference detection (Issue #12 fix).
+ * @internal
  */
 export function normalize(
   data: unknown,
   entityDefs: Record<string, EntityDefinition>,
   defaultIdField: string,
 ): NormalizationResult {
-  const extractedEntities: NormalizationResult['entities'] = []
-  const visited = new WeakSet<object>()
+  const extractedEntities: NormalizationResult["entities"] = [];
+  const visited = new WeakSet<object>();
 
-  const normalized = walkAndNormalize(data, entityDefs, defaultIdField, extractedEntities, visited)
+  const normalized = walkAndNormalize(data, entityDefs, defaultIdField, extractedEntities, visited);
 
-  return { normalized, entities: extractedEntities }
+  return { normalized, entities: extractedEntities };
 }
 
 function walkAndNormalize(
   data: unknown,
   entityDefs: Record<string, EntityDefinition>,
   defaultIdField: string,
-  extracted: NormalizationResult['entities'],
+  extracted: NormalizationResult["entities"],
   visited: WeakSet<object>,
 ): unknown {
   // Null / undefined / primitives — pass through
-  if (data == null || typeof data !== 'object') {
-    return data
+  if (data == null || typeof data !== "object") {
+    return data;
   }
 
   // Circular reference protection (Issue #12 fix)
   if (visited.has(data)) {
-    return data // Return as-is, don't recurse
+    return data; // Return as-is, don't recurse
   }
-  visited.add(data)
+  visited.add(data);
 
   // Arrays — walk each element
   if (Array.isArray(data)) {
     return data.map((item) =>
       walkAndNormalize(item, entityDefs, defaultIdField, extracted, visited),
-    )
+    );
   }
 
   // Objects — check if this is an entity
-  const record = data as EntityRecord
-  const entityInfo = identifyEntity(record, entityDefs, defaultIdField)
+  const record = data as EntityRecord;
+  const entityInfo = identifyEntity(record, entityDefs, defaultIdField);
 
   if (entityInfo) {
-    const { entityType, id } = entityInfo
+    const { entityType, id } = entityInfo;
 
     // Recursively normalize nested entities within this entity
-    const normalizedEntity: EntityRecord = {}
+    const normalizedEntity: EntityRecord = {};
     for (const [key, value] of Object.entries(record)) {
-      normalizedEntity[key] = walkAndNormalize(value, entityDefs, defaultIdField, extracted, visited)
+      normalizedEntity[key] = walkAndNormalize(
+        value,
+        entityDefs,
+        defaultIdField,
+        extracted,
+        visited,
+      );
     }
 
     // Extract the entity
-    extracted.push({ entityType, id, data: normalizedEntity })
+    extracted.push({ entityType, id, data: normalizedEntity });
 
     // Replace with a reference (using Symbol marker, Issue #13 fix)
     const ref: EntityRef = {
@@ -737,16 +754,16 @@ function walkAndNormalize(
       entityType,
       id,
       key: `${entityType}:${id}`,
-    }
-    return ref
+    };
+    return ref;
   }
 
   // Not an entity — walk children but keep the structure intact
-  const result: EntityRecord = {}
+  const result: EntityRecord = {};
   for (const [key, value] of Object.entries(record)) {
-    result[key] = walkAndNormalize(value, entityDefs, defaultIdField, extracted, visited)
+    result[key] = walkAndNormalize(value, entityDefs, defaultIdField, extracted, visited);
   }
-  return result
+  return result;
 }
 
 /**
@@ -769,11 +786,11 @@ function identifyEntity(
   // Check explicit definitions first
   for (const [entityType, def] of Object.entries(entityDefs)) {
     if (def.getId) {
-      const id = def.getId(record)
-      if (id != null) return { entityType, id: String(id) }
+      const id = def.getId(record);
+      if (id != null) return { entityType, id: String(id) };
     }
     if (def.idField && record[def.idField] != null) {
-      return { entityType, id: String(record[def.idField]) }
+      return { entityType, id: String(record[def.idField]) };
     }
   }
 
@@ -783,15 +800,15 @@ function identifyEntity(
     // __typename is the GraphQL convention.
     // Without a type, we SKIP auto-detection to prevent ID collisions
     // between unrelated objects (e.g., user id:1 vs order id:1).
-    if (typeof record.__typename === 'string') {
-      return { entityType: record.__typename, id: String(record[defaultIdField]) }
+    if (typeof record.__typename === "string") {
+      return { entityType: record.__typename, id: String(record[defaultIdField]) };
     }
     // No type information available — skip normalization for this object.
     // Users should use defineEntity() for REST APIs without __typename.
-    return null
+    return null;
   }
 
-  return null
+  return null;
 }
 
 // ─────────────────────────────────────────────
@@ -812,14 +829,15 @@ function identifyEntity(
  *
  * Uses store.has() before store.get() to avoid creating phantom refs.
  * Uses a WeakSet for circular reference protection.
+ * @internal
  */
 export function denormalize(
   data: unknown,
   store: EntityStore,
   cache?: Map<string, { entity: EntityRecord; result: unknown }>,
 ): unknown {
-  const visited = new WeakSet<object>()
-  return walkAndDenormalize(data, store, visited, cache)
+  const visited = new WeakSet<object>();
+  return walkAndDenormalize(data, store, visited, cache);
 }
 
 function walkAndDenormalize(
@@ -828,71 +846,71 @@ function walkAndDenormalize(
   visited: WeakSet<object>,
   cache?: Map<string, { entity: EntityRecord; result: unknown }>,
 ): unknown {
-  if (data == null || typeof data !== 'object') {
-    return data
+  if (data == null || typeof data !== "object") {
+    return data;
   }
 
   if (visited.has(data as object)) {
-    return data
+    return data;
   }
-  visited.add(data as object)
+  visited.add(data as object);
 
   if (Array.isArray(data)) {
-    let changed = false
+    let changed = false;
     const result = data.map((item) => {
-      const newItem = walkAndDenormalize(item, store, visited, cache)
-      if (newItem !== item) changed = true
-      return newItem
-    })
+      const newItem = walkAndDenormalize(item, store, visited, cache);
+      if (newItem !== item) changed = true;
+      return newItem;
+    });
     // Backtrack: allow this array to be revisited from other paths.
     // Circular refs are still caught because the array is in `visited`
     // during its own subtree traversal.
-    visited.delete(data)
-    return changed ? result : data
+    visited.delete(data);
+    return changed ? result : data;
   }
 
-  const record = data as Record<string | symbol, unknown>
+  const record = data as Record<string | symbol, unknown>;
   if (isEntityRef(record)) {
-    const entityType = record.entityType as string
-    const id = record.id as string
+    const entityType = record.entityType as string;
+    const id = record.id as string;
 
     // Check existence first to avoid creating phantom refs
-    if (!store.has(entityType, id)) return undefined
+    if (!store.has(entityType, id)) return undefined;
 
     // Read the ShallowRef — tracked by the outer computed for reactivity
-    const entity = store.get(entityType, id).value
-    if (entity == null) return undefined
+    const entity = store.get(entityType, id).value;
+    if (entity == null) return undefined;
 
     // Structural sharing: if cache provided and entity ref unchanged, reuse result
     if (cache) {
-      const cacheKey = `${entityType}:${id}`
-      const cached = cache.get(cacheKey)
+      const cacheKey = `${entityType}:${id}`;
+      const cached = cache.get(cacheKey);
       if (cached && cached.entity === entity) {
-        return cached.result
+        return cached.result;
       }
-      const result = walkAndDenormalize(entity, store, visited, cache)
-      cache.set(cacheKey, { entity, result })
-      return result
+      const result = walkAndDenormalize(entity, store, visited, cache);
+      cache.set(cacheKey, { entity, result });
+      return result;
     }
 
-    return walkAndDenormalize(entity, store, visited, cache)
+    return walkAndDenormalize(entity, store, visited, cache);
   }
 
   // Walk children with structural sharing
-  let changed = false
-  const result: Record<string, unknown> = {}
+  let changed = false;
+  const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
-    const newValue = walkAndDenormalize(value, store, visited, cache)
-    result[key] = newValue
-    if (newValue !== value) changed = true
+    const newValue = walkAndDenormalize(value, store, visited, cache);
+    result[key] = newValue;
+    if (newValue !== value) changed = true;
   }
   // Backtrack: allow this object to be revisited from other ref paths.
   // Circular refs are still caught because the object is in `visited`
   // during its own subtree traversal.
-  visited.delete(data as object)
-  return changed ? result : data
+  visited.delete(data as object);
+  return changed ? result : data;
 }
 
 function isEntityRef(obj: Record<string | symbol, unknown>): boolean {
-  return obj[ENTITY_REF_MARKER] === true
+  return obj[ENTITY_REF_MARKER] === true;
 }

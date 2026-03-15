@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
-import { useQuery } from '@pinia/colada'
+import { ref, reactive, computed } from "vue";
+import { useQuery } from "@pinia/colada";
 import {
   useEntityStore,
   useOptimisticUpdate,
@@ -8,155 +8,228 @@ import {
   onEntityUpdated,
   onEntityRemoved,
   updateQueryData,
-  removeEntityFromAllQueries,
+  deleteEntity,
   useEntityQuery,
-} from 'pinia-colada-plugin-normalizer'
+} from "pinia-colada-plugin-normalizer";
 
-const entityStore = useEntityStore()
+const entityStore = useEntityStore();
 
 // ═══════════════════════════════════════════════
 // 1. OPTIMISTIC UPDATES (prefix: opt-)
 // ═══════════════════════════════════════════════
 // Seed
-entityStore.set('contact', 'opt-1', { contactId: 'opt-1', name: 'Alice Chen', role: 'Engineer', status: 'active' })
+entityStore.set("contact", "opt-1", {
+  contactId: "opt-1",
+  name: "Alice Chen",
+  role: "Engineer",
+  status: "active",
+});
 
-const { apply } = useOptimisticUpdate()
-const optimisticStatus = ref<'idle' | 'pending-success' | 'pending-fail' | 'rolled-back' | 'committed'>('idle')
+const { apply } = useOptimisticUpdate();
+const optimisticStatus = ref<
+  "idle" | "pending-success" | "pending-fail" | "rolled-back" | "committed"
+>("idle");
 
 function optimisticSuccess() {
-  entityStore.replace('contact', 'opt-1', { contactId: 'opt-1', name: 'Alice Chen', role: 'Engineer', status: 'active' })
-  optimisticStatus.value = 'pending-success'
-  apply('contact', 'opt-1', { contactId: 'opt-1', name: 'Alicia Chen', role: 'Engineer', status: 'active' })
+  entityStore.replace("contact", "opt-1", {
+    contactId: "opt-1",
+    name: "Alice Chen",
+    role: "Engineer",
+    status: "active",
+  });
+  optimisticStatus.value = "pending-success";
+  apply("contact", "opt-1", {
+    contactId: "opt-1",
+    name: "Alicia Chen",
+    role: "Engineer",
+    status: "active",
+  });
 
   setTimeout(() => {
-    optimisticStatus.value = 'committed'
-  }, 1500)
+    optimisticStatus.value = "committed";
+  }, 1500);
 }
 
 function optimisticFail() {
-  entityStore.replace('contact', 'opt-1', { contactId: 'opt-1', name: 'Alice Chen', role: 'Engineer', status: 'active' })
-  optimisticStatus.value = 'pending-fail'
-  const rollback = apply('contact', 'opt-1', { contactId: 'opt-1', name: 'Alicia Chen', role: 'Engineer', status: 'active' })
+  entityStore.replace("contact", "opt-1", {
+    contactId: "opt-1",
+    name: "Alice Chen",
+    role: "Engineer",
+    status: "active",
+  });
+  optimisticStatus.value = "pending-fail";
+  const rollback = apply("contact", "opt-1", {
+    contactId: "opt-1",
+    name: "Alicia Chen",
+    role: "Engineer",
+    status: "active",
+  });
 
   setTimeout(() => {
-    rollback()
-    optimisticStatus.value = 'rolled-back'
-  }, 1500)
+    rollback();
+    optimisticStatus.value = "rolled-back";
+  }, 1500);
 }
 
 function resetOptimistic() {
-  entityStore.replace('contact', 'opt-1', { contactId: 'opt-1', name: 'Alice Chen', role: 'Engineer', status: 'active' })
-  optimisticStatus.value = 'idle'
+  entityStore.replace("contact", "opt-1", {
+    contactId: "opt-1",
+    name: "Alice Chen",
+    role: "Engineer",
+    status: "active",
+  });
+  optimisticStatus.value = "idle";
 }
 
-const aliceName = computed(() => entityStore.get('contact', 'opt-1').value?.name ?? 'N/A')
+const aliceName = computed(() => entityStore.get("contact", "opt-1").value?.name ?? "N/A");
 
 // ═══════════════════════════════════════════════
 // 2. REAL-TIME HOOKS (prefix: hook-)
 // ═══════════════════════════════════════════════
-let hookNextId = 1
-entityStore.set('contact', 'hook-1', { contactId: 'hook-1', name: 'Bob Park', role: 'Designer', status: 'active' })
+let hookNextId = 1;
+entityStore.set("contact", "hook-1", {
+  contactId: "hook-1",
+  name: "Bob Park",
+  role: "Designer",
+  status: "active",
+});
 
 interface HookEvent {
-  time: string
-  type: 'added' | 'updated' | 'removed'
-  message: string
+  time: string;
+  type: "added" | "updated" | "removed";
+  message: string;
 }
-const hookEvents = reactive<HookEvent[]>([])
+const hookEvents = reactive<HookEvent[]>([]);
 
-function logHook(type: HookEvent['type'], message: string) {
-  const time = new Date().toLocaleTimeString('en-US', { hour12: false })
-  hookEvents.unshift({ time, type, message })
-  if (hookEvents.length > 10) hookEvents.pop()
+function logHook(type: HookEvent["type"], message: string) {
+  const time = new Date().toLocaleTimeString("en-US", { hour12: false });
+  hookEvents.unshift({ time, type, message });
+  if (hookEvents.length > 10) hookEvents.pop();
 }
 
 // Only listen to hook- prefixed entities
-onEntityAdded('contact', (e) => {
-  if (!e.id.startsWith('hook-')) return
-  logHook('added', `Added: ${(e.data as any)?.name ?? e.id}`)
-})
-onEntityUpdated('contact', (e) => {
-  if (!e.id.startsWith('hook-')) return
-  logHook('updated', `Updated: ${e.id} → ${(e.data as any)?.name}`)
-})
-onEntityRemoved('contact', (e) => {
-  if (!e.id.startsWith('hook-')) return
-  logHook('removed', `Removed: ${(e.previousData as any)?.name ?? e.id}`)
-})
+onEntityAdded("contact", (e) => {
+  if (!e.id.startsWith("hook-")) return;
+  logHook("added", `Added: ${(e.data as any)?.name ?? e.id}`);
+});
+onEntityUpdated("contact", (e) => {
+  if (!e.id.startsWith("hook-")) return;
+  logHook("updated", `Updated: ${e.id} → ${(e.data as any)?.name}`);
+});
+onEntityRemoved("contact", (e) => {
+  if (!e.id.startsWith("hook-")) return;
+  logHook("removed", `Removed: ${(e.previousData as any)?.name ?? e.id}`);
+});
 
 function triggerAdd() {
-  hookNextId++
-  const id = `hook-${hookNextId}`
-  entityStore.set('contact', id, { contactId: id, name: `Contact ${hookNextId}`, role: 'New', status: 'active' })
+  hookNextId++;
+  const id = `hook-${hookNextId}`;
+  entityStore.set("contact", id, {
+    contactId: id,
+    name: `Contact ${hookNextId}`,
+    role: "New",
+    status: "active",
+  });
 }
 
 function triggerUpdate() {
-  entityStore.set('contact', 'hook-1', { contactId: 'hook-1', name: `Bob Park (v${Date.now() % 1000})`, role: 'Designer', status: 'active' })
+  entityStore.set("contact", "hook-1", {
+    contactId: "hook-1",
+    name: `Bob Park (v${Date.now() % 1000})`,
+    role: "Designer",
+    status: "active",
+  });
 }
 
 function triggerRemove() {
   // Find last hook- entity
-  const all = entityStore.getByType('contact').value
-  const hookEntities = all.filter((e: any) => e.contactId?.startsWith('hook-'))
+  const all = entityStore.getByType("contact").value;
+  const hookEntities = all.filter((e: any) => e.contactId?.startsWith("hook-"));
   if (hookEntities.length > 0) {
-    const last = hookEntities[hookEntities.length - 1] as any
-    entityStore.remove('contact', last.contactId)
+    const last = hookEntities[hookEntities.length - 1] as any;
+    entityStore.remove("contact", last.contactId);
   }
 }
 
 // ═══════════════════════════════════════════════
 // 3. ARRAY OPERATIONS (prefix: arr-)
 // ═══════════════════════════════════════════════
-let arrNextId = 3
-const arrFetchCount = ref(0)
+let arrNextId = 3;
+const arrFetchCount = ref(0);
 const arrSeed = [
-  { contactId: 'arr-1', name: 'Dana Kim', role: 'Engineer', status: 'active' },
-  { contactId: 'arr-2', name: 'Eli Torres', role: 'PM', status: 'active' },
-  { contactId: 'arr-3', name: 'Fiona Lee', role: 'Designer', status: 'active' },
-]
-for (const c of arrSeed) entityStore.set('contact', c.contactId, { ...c })
+  { contactId: "arr-1", name: "Dana Kim", role: "Engineer", status: "active" },
+  { contactId: "arr-2", name: "Eli Torres", role: "PM", status: "active" },
+  { contactId: "arr-3", name: "Fiona Lee", role: "Designer", status: "active" },
+];
+for (const c of arrSeed) entityStore.set("contact", c.contactId, { ...c });
 
 const { data: arrayDemoData } = useQuery({
-  key: ['features', 'arr-contacts'],
+  key: ["features", "arr-contacts"],
   query: async () => {
-    arrFetchCount.value++
-    return arrSeed.map(c => ({ ...c }))
+    arrFetchCount.value++;
+    return arrSeed.map((c) => ({ ...c }));
   },
   normalize: true,
-})
+});
 
 function addToList() {
-  arrNextId++
-  const id = `arr-${arrNextId}`
-  const newContact = { contactId: id, name: `Contact ${arrNextId}`, role: 'Added', status: 'active' }
-  entityStore.set('contact', id, newContact)
-  updateQueryData(['features', 'arr-contacts'], (data) => [...(data as any[]), newContact])
+  arrNextId++;
+  const id = `arr-${arrNextId}`;
+  const newContact = {
+    contactId: id,
+    name: `Contact ${arrNextId}`,
+    role: "Added",
+    status: "active",
+  };
+  entityStore.set("contact", id, newContact);
+  updateQueryData(["features", "arr-contacts"], (data) => [...(data as any[]), newContact]);
 }
 
 function removeFirstFromList() {
   if (arrayDemoData.value && (arrayDemoData.value as any[]).length > 0) {
-    const first = (arrayDemoData.value as any[])[0]
-    removeEntityFromAllQueries('contact', first.contactId)
+    const first = (arrayDemoData.value as any[])[0];
+    deleteEntity("contact", first.contactId);
   }
 }
 
 // ═══════════════════════════════════════════════
 // 4. ENTITY QUERIES (prefix: eq-)
 // ═══════════════════════════════════════════════
-entityStore.set('contact', 'eq-1', { contactId: 'eq-1', name: 'Grace Wu', role: 'Engineer', status: 'active' })
-entityStore.set('contact', 'eq-2', { contactId: 'eq-2', name: 'Henry Zhao', role: 'Designer', status: 'active' })
-entityStore.set('contact', 'eq-3', { contactId: 'eq-3', name: 'Iris Patel', role: 'PM', status: 'inactive' })
+entityStore.set("contact", "eq-1", {
+  contactId: "eq-1",
+  name: "Grace Wu",
+  role: "Engineer",
+  status: "active",
+});
+entityStore.set("contact", "eq-2", {
+  contactId: "eq-2",
+  name: "Henry Zhao",
+  role: "Designer",
+  status: "active",
+});
+entityStore.set("contact", "eq-3", {
+  contactId: "eq-3",
+  name: "Iris Patel",
+  role: "PM",
+  status: "inactive",
+});
 
-const activeContacts = useEntityQuery('contact', (c) => (c.contactId as string)?.startsWith('eq-') && c.status === 'active')
-const inactiveContacts = useEntityQuery('contact', (c) => (c.contactId as string)?.startsWith('eq-') && c.status === 'inactive')
+const activeContacts = useEntityQuery(
+  "contact",
+  (c) => (c.contactId as string)?.startsWith("eq-") && c.status === "active",
+);
+const inactiveContacts = useEntityQuery(
+  "contact",
+  (c) => (c.contactId as string)?.startsWith("eq-") && c.status === "inactive",
+);
 
 function toggleStatus() {
-  const iris = entityStore.get('contact', 'eq-3').value
+  const iris = entityStore.get("contact", "eq-3").value;
   if (iris) {
-    entityStore.set('contact', 'eq-3', {
+    entityStore.set("contact", "eq-3", {
       ...iris,
-      status: iris.status === 'active' ? 'inactive' : 'active',
-    })
+      status: iris.status === "active" ? "inactive" : "active",
+    });
   }
 }
 </script>
@@ -171,8 +244,8 @@ function toggleStatus() {
     <section class="feature-card">
       <h2 class="feature-title">Optimistic Updates</h2>
       <p class="feature-desc">
-        Apply instant UI updates with automatic rollback on failure.
-        Transaction-based with server truth snapshots.
+        Apply instant UI updates with automatic rollback on failure. Transaction-based with server
+        truth snapshots.
       </p>
       <div class="feature-demo">
         <div class="entity-display">
@@ -180,13 +253,23 @@ function toggleStatus() {
           <span class="value">{{ aliceName }}</span>
           <span v-if="optimisticStatus.startsWith('pending')" class="badge pending">pending</span>
           <span v-else-if="optimisticStatus === 'committed'" class="badge success">committed</span>
-          <span v-else-if="optimisticStatus === 'rolled-back'" class="badge danger">rolled back</span>
+          <span v-else-if="optimisticStatus === 'rolled-back'" class="badge danger"
+            >rolled back</span
+          >
         </div>
         <div class="feature-actions">
-          <button class="btn btn-success" @click="optimisticSuccess" :disabled="optimisticStatus.startsWith('pending')">
+          <button
+            class="btn btn-success"
+            @click="optimisticSuccess"
+            :disabled="optimisticStatus.startsWith('pending')"
+          >
             Update (server accepts)
           </button>
-          <button class="btn btn-danger" @click="optimisticFail" :disabled="optimisticStatus.startsWith('pending')">
+          <button
+            class="btn btn-danger"
+            @click="optimisticFail"
+            :disabled="optimisticStatus.startsWith('pending')"
+          >
             Update (server rejects)
           </button>
           <button class="btn btn-muted" @click="resetOptimistic">Reset</button>
@@ -223,7 +306,7 @@ function toggleStatus() {
       <h2 class="feature-title">Array Operations</h2>
       <p class="feature-desc">
         Add or remove entities from list queries without refetching.
-        <code>updateQueryData</code> and <code>removeEntityFromAllQueries</code>.
+        <code>updateQueryData</code> and <code>deleteEntity</code>.
       </p>
       <div class="feature-demo">
         <div class="feature-actions">
@@ -232,11 +315,13 @@ function toggleStatus() {
         </div>
         <div class="list-display">
           <div class="list-header">
-            <span class="label">Query data ({{ (arrayDemoData as any[])?.length ?? 0 }} items):</span>
+            <span class="label"
+              >Query data ({{ (arrayDemoData as any[])?.length ?? 0 }} items):</span
+            >
             <span class="fetch-counter">Network requests: {{ arrFetchCount }}</span>
           </div>
           <div v-if="arrayDemoData" class="entity-chips">
-            <span v-for="c in (arrayDemoData as any[])" :key="c.contactId" class="chip">
+            <span v-for="c in arrayDemoData as any[]" :key="c.contactId" class="chip">
               {{ c.name }}
             </span>
           </div>
@@ -249,8 +334,8 @@ function toggleStatus() {
     <section class="feature-card">
       <h2 class="feature-title">Entity Queries</h2>
       <p class="feature-desc">
-        <code>useEntityQuery</code> — reactive filtered views that update automatically
-        when entities change.
+        <code>useEntityQuery</code> — reactive filtered views that update automatically when
+        entities change.
       </p>
       <div class="feature-demo">
         <div class="feature-actions">
@@ -343,15 +428,39 @@ function toggleStatus() {
   transition: all 0.15s;
 }
 
-.btn:disabled { opacity: 0.4; pointer-events: none; }
-.btn-success { background: var(--success); color: #fff; }
-.btn-success:hover { filter: brightness(1.1); }
-.btn-danger { background: var(--danger); color: #fff; }
-.btn-danger:hover { filter: brightness(1.1); }
-.btn-accent { background: var(--accent); color: #fff; }
-.btn-accent:hover { filter: brightness(1.1); }
-.btn-muted { background: var(--surface-raised); border: 1px solid var(--border); color: var(--text-muted); }
-.btn-muted:hover { background: var(--surface-hover); }
+.btn:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.btn-success {
+  background: var(--success);
+  color: #fff;
+}
+.btn-success:hover {
+  filter: brightness(1.1);
+}
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+.btn-danger:hover {
+  filter: brightness(1.1);
+}
+.btn-accent {
+  background: var(--accent);
+  color: #fff;
+}
+.btn-accent:hover {
+  filter: brightness(1.1);
+}
+.btn-muted {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.btn-muted:hover {
+  background: var(--surface-hover);
+}
 
 .entity-display {
   display: flex;
@@ -362,17 +471,45 @@ function toggleStatus() {
   border-radius: 6px;
 }
 
-.label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
-.label.success { color: var(--success); }
-.label.danger { color: var(--danger); }
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.label.success {
+  color: var(--success);
+}
+.label.danger {
+  color: var(--danger);
+}
 
-.value { font-size: 14px; font-weight: 500; font-family: monospace; }
-.value.muted { color: var(--text-muted); }
+.value {
+  font-size: 14px;
+  font-weight: 500;
+  font-family: monospace;
+}
+.value.muted {
+  color: var(--text-muted);
+}
 
-.badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 3px; }
-.badge.pending { background: var(--warning-bg); color: var(--warning); }
-.badge.success { background: var(--success-bg); color: var(--success); }
-.badge.danger { background: var(--danger-bg); color: var(--danger); }
+.badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+.badge.pending {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+.badge.success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.badge.danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
 
 .event-log {
   padding: 8px 12px;
@@ -382,27 +519,59 @@ function toggleStatus() {
   overflow-y: auto;
 }
 
-.event-log.empty { color: var(--text-muted); font-size: 12px; font-style: italic; }
-
-.log-entry {
-  font-family: monospace; font-size: 11px; padding: 2px 0;
-  display: flex; gap: 8px;
-  border-left: 3px solid var(--border); padding-left: 8px; margin-bottom: 2px;
+.event-log.empty {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
 }
 
-.log-entry.added { border-left-color: var(--success); }
-.log-entry.updated { border-left-color: var(--accent); }
-.log-entry.removed { border-left-color: var(--danger); }
-.log-time { color: var(--text-muted); }
-.log-type { font-weight: 600; min-width: 60px; }
-.log-entry.added .log-type { color: var(--success); }
-.log-entry.updated .log-type { color: var(--accent); }
-.log-entry.removed .log-type { color: var(--danger); }
-.log-msg { color: var(--text); }
+.log-entry {
+  font-family: monospace;
+  font-size: 11px;
+  padding: 2px 0;
+  display: flex;
+  gap: 8px;
+  border-left: 3px solid var(--border);
+  padding-left: 8px;
+  margin-bottom: 2px;
+}
+
+.log-entry.added {
+  border-left-color: var(--success);
+}
+.log-entry.updated {
+  border-left-color: var(--accent);
+}
+.log-entry.removed {
+  border-left-color: var(--danger);
+}
+.log-time {
+  color: var(--text-muted);
+}
+.log-type {
+  font-weight: 600;
+  min-width: 60px;
+}
+.log-entry.added .log-type {
+  color: var(--success);
+}
+.log-entry.updated .log-type {
+  color: var(--accent);
+}
+.log-entry.removed .log-type {
+  color: var(--danger);
+}
+.log-msg {
+  color: var(--text);
+}
 
 .list-display {
-  display: flex; flex-direction: column; gap: 6px;
-  padding: 8px 12px; background: var(--surface-raised); border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--surface-raised);
+  border-radius: 6px;
 }
 
 .list-header {
@@ -421,20 +590,43 @@ function toggleStatus() {
   color: var(--success);
 }
 
-.entity-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-
-.chip {
-  font-size: 12px; padding: 3px 10px; border-radius: 4px;
-  background: var(--surface); border: 1px solid var(--border);
+.entity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
-.chip.active { background: var(--success-bg); border-color: var(--success); color: var(--success); }
-.chip.inactive { background: var(--danger-bg); border-color: var(--danger); color: var(--danger); }
+.chip {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
 
-.query-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.chip.active {
+  background: var(--success-bg);
+  border-color: var(--success);
+  color: var(--success);
+}
+.chip.inactive {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.query-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
 
 .query-col {
-  display: flex; flex-direction: column; gap: 6px;
-  padding: 8px 12px; background: var(--surface-raised); border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--surface-raised);
+  border-radius: 6px;
 }
 </style>

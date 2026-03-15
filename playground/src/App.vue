@@ -1,49 +1,67 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
-import AppHeader from './components/AppHeader.vue'
-import ContactList from './components/ContactList.vue'
-import ContactDetail from './components/ContactDetail.vue'
-import ContactListRaw from './components/ContactListRaw.vue'
-import ContactDetailRaw from './components/ContactDetailRaw.vue'
-import DataInspector from './components/DataInspector.vue'
-import FeaturesPage from './components/FeaturesPage.vue'
-import StressTestPage from './components/StressTestPage.vue'
-import { useDemo } from './composables/useDemo'
+import { ref, reactive } from "vue";
+import AppHeader from "./components/AppHeader.vue";
+import ContactList from "./components/ContactList.vue";
+import ContactDetail from "./components/ContactDetail.vue";
+import ContactListRaw from "./components/ContactListRaw.vue";
+import ContactDetailRaw from "./components/ContactDetailRaw.vue";
+import DataInspector from "./components/DataInspector.vue";
+import FeaturesPage from "./components/FeaturesPage.vue";
+import StressTestPage from "./components/StressTestPage.vue";
+import { useDemo } from "./composables/useDemo";
 
-const currentPage = ref('demo')
-const selectedId = ref<string | null>('1')
-const { normalized, entityWrites, rawUpdates, log, applyUpdate, resetDemo } = useDemo()
-const clicked = reactive(new Set<string>())
+const currentPage = ref("demo");
+const selectedId = ref<string | null>("1");
+const { normalized, entityWrites, rawUpdates, log, applyUpdate, resetDemo } = useDemo();
+const clicked = reactive(new Set<string>());
 
 function toggleMode() {
-  normalized.value = !normalized.value
-  selectedId.value = '1'
-  clicked.clear()
-  resetDemo()
+  normalized.value = !normalized.value;
+  selectedId.value = "1";
+  clicked.clear();
+  resetDemo();
 }
 
 function renameAlice() {
-  clicked.add('alice')
+  clicked.add("alice");
   applyUpdate(
-    { contactId: '1', name: 'Alicia Chen', email: 'alice@acme.com', role: 'Engineer', status: 'active' },
-    'Alice → Alicia',
-  )
+    {
+      contactId: "1",
+      name: "Alicia Chen",
+      email: "alice@acme.com",
+      role: "Engineer",
+      status: "active",
+    },
+    "Alice → Alicia",
+  );
 }
 
 function promoteBob() {
-  clicked.add('bob')
+  clicked.add("bob");
   applyUpdate(
-    { contactId: '2', name: 'Bob Park', email: 'bob@acme.com', role: 'Lead Designer', status: 'active' },
-    'Bob → Lead Designer',
-  )
+    {
+      contactId: "2",
+      name: "Bob Park",
+      email: "bob@acme.com",
+      role: "Lead Designer",
+      status: "active",
+    },
+    "Bob → Lead Designer",
+  );
 }
 
 function activateDiana() {
-  clicked.add('diana')
+  clicked.add("diana");
   applyUpdate(
-    { contactId: '4', name: 'Diana Lopez', email: 'diana@acme.com', role: 'Engineer', status: 'active' },
-    'Diana → active',
-  )
+    {
+      contactId: "4",
+      name: "Diana Lopez",
+      email: "diana@acme.com",
+      role: "Engineer",
+      status: "active",
+    },
+    "Diana → active",
+  );
 }
 </script>
 
@@ -54,7 +72,8 @@ function activateDiana() {
     <!-- Demo page -->
     <template v-if="currentPage === 'demo'">
       <p class="tagline">
-        Update an entity once, and every query that references it reflects the change automatically. No <code>invalidateQueries()</code>. No stale data. No manual cache updates.
+        Update an entity once, and every query that references it reflects the change automatically.
+        No <code>invalidateQueries()</code>. No stale data. No manual cache updates.
       </p>
 
       <!-- Control strip -->
@@ -70,9 +89,27 @@ function activateDiana() {
           <div class="control-divider"></div>
           <div class="action-group">
             <span class="action-label">Update an entity:</span>
-            <button @click="renameAlice" :class="['action-btn', { applied: clicked.has('alice') }]" :disabled="clicked.has('alice')">Alice → Alicia</button>
-            <button @click="promoteBob" :class="['action-btn', { applied: clicked.has('bob') }]" :disabled="clicked.has('bob')">Bob → Lead Designer</button>
-            <button @click="activateDiana" :class="['action-btn', { applied: clicked.has('diana') }]" :disabled="clicked.has('diana')">Diana → active</button>
+            <button
+              @click="renameAlice"
+              :class="['action-btn', { applied: clicked.has('alice') }]"
+              :disabled="clicked.has('alice')"
+            >
+              Alice → Alicia
+            </button>
+            <button
+              @click="promoteBob"
+              :class="['action-btn', { applied: clicked.has('bob') }]"
+              :disabled="clicked.has('bob')"
+            >
+              Bob → Lead Designer
+            </button>
+            <button
+              @click="activateDiana"
+              :class="['action-btn', { applied: clicked.has('diana') }]"
+              :disabled="clicked.has('diana')"
+            >
+              Diana → active
+            </button>
           </div>
         </div>
       </div>
@@ -80,10 +117,12 @@ function activateDiana() {
       <!-- Mode hint -->
       <div :class="['mode-hint', normalized ? 'success' : 'warning']">
         <template v-if="normalized">
-          With normalization, each entity is stored once. Update it anywhere and both views reflect the change instantly.
+          With normalization, each entity is stored once. Update it anywhere and both views reflect
+          the change instantly.
         </template>
         <template v-else>
-          Without normalization, each query stores its own copy. Update one and the others go stale unless you manually invalidate them.
+          Without normalization, each query stores its own copy. Update one and the others go stale
+          unless you manually invalidate them.
         </template>
       </div>
 
@@ -96,22 +135,11 @@ function activateDiana() {
             :normalized="true"
             @select="selectedId = $event"
           />
-          <ContactListRaw
-            v-else
-            :selected-id="selectedId"
-            @select="selectedId = $event"
-          />
+          <ContactListRaw v-else :selected-id="selectedId" @select="selectedId = $event" />
         </div>
         <div class="panel-container">
-          <ContactDetail
-            v-if="normalized"
-            :contact-id="selectedId"
-            :normalized="true"
-          />
-          <ContactDetailRaw
-            v-else
-            :contact-id="selectedId"
-          />
+          <ContactDetail v-if="normalized" :contact-id="selectedId" :normalized="true" />
+          <ContactDetailRaw v-else :contact-id="selectedId" />
         </div>
       </div>
 
@@ -136,7 +164,8 @@ function activateDiana() {
 </template>
 
 <style>
-:root, [data-theme="light"] {
+:root,
+[data-theme="light"] {
   --bg: #ffffff;
   --surface: #ffffff;
   --surface-raised: #f8f9fa;
@@ -172,87 +201,204 @@ function activateDiana() {
   --warning-bg: #3d2e00;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  color: var(--text); background: var(--bg);
-  transition: background 0.2s, color 0.2s;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  transition:
+    background 0.2s,
+    color 0.2s;
 }
 
-.app { max-width: 960px; margin: 0 auto; padding: 0 16px 32px; }
+.app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 16px 32px;
+}
 
 /* Tagline */
-.tagline { margin: 0 0 12px; color: var(--text-muted); font-size: 14px; line-height: 1.4; }
+.tagline {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
 
 /* Control strip */
 .controls {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-top: 14px; padding: 10px 14px;
-  background: var(--surface-raised); border: 1px solid var(--border); border-radius: 8px;
-  gap: 12px; flex-wrap: wrap;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
-.control-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.toggle-group { display: flex; align-items: center; gap: 8px; }
-.toggle-label { font-weight: 600; font-size: 13px; color: var(--text); }
+.control-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.toggle-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.toggle-label {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text);
+}
 .toggle-btn {
-  display: flex; background: var(--surface); border: 1px solid var(--border);
-  border-radius: 5px; overflow: hidden; cursor: pointer; padding: 0;
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+  cursor: pointer;
+  padding: 0;
 }
 .toggle-option {
-  padding: 5px 14px; font-size: 12px; font-weight: 600;
-  color: var(--text-muted); transition: all 0.15s;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: all 0.15s;
 }
-.toggle-option.selected { background: var(--accent); color: #fff; }
-.control-divider { width: 1px; height: 24px; background: var(--border); }
-.action-group { display: flex; align-items: center; gap: 6px; }
-.action-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.toggle-option.selected {
+  background: var(--accent);
+  color: #fff;
+}
+.control-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border);
+}
+.action-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.action-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
 .action-btn {
-  padding: 5px 12px; border: 1.5px solid var(--accent); border-radius: 5px;
-  background: var(--surface); color: var(--accent); cursor: pointer;
-  font-size: 12px; font-weight: 500; transition: all 0.15s; white-space: nowrap;
+  padding: 5px 12px;
+  border: 1.5px solid var(--accent);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s;
+  white-space: nowrap;
 }
-.action-btn:hover { background: var(--accent-bg); }
-.action-btn.applied { background: var(--accent); color: #fff; cursor: default; opacity: 0.7; }
-.action-btn:disabled { pointer-events: none; }
-.control-stats { flex-shrink: 0; }
+.action-btn:hover {
+  background: var(--accent-bg);
+}
+.action-btn.applied {
+  background: var(--accent);
+  color: #fff;
+  cursor: default;
+  opacity: 0.7;
+}
+.action-btn:disabled {
+  pointer-events: none;
+}
+.control-stats {
+  flex-shrink: 0;
+}
 .mini-stat {
-  font-family: monospace; font-size: 12px; font-weight: 500;
-  padding: 4px 10px; border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 4px;
 }
-.mini-stat.success { background: var(--success-bg); color: var(--success); }
-.mini-stat.danger { background: var(--danger-bg); color: var(--danger); }
+.mini-stat.success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.mini-stat.danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
 
 /* Mode hint */
 .mode-hint {
-  margin-top: 8px; padding: 8px 14px; border-radius: 6px;
-  font-size: 13px; font-weight: 500;
+  margin-top: 8px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
 }
-.mode-hint.success { background: var(--success-bg); color: var(--success); }
-.mode-hint.warning { background: var(--danger-bg); color: var(--danger); }
+.mode-hint.success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.mode-hint.warning {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
 
 /* Panels */
 .panels {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
-  background: var(--border); margin: 12px 0;
-  border: 2px solid var(--border); border-radius: 10px; overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  margin: 12px 0;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
 }
-.panel-container { background: var(--surface); min-height: 200px; }
+.panel-container {
+  background: var(--surface);
+  min-height: 200px;
+}
 
 /* Event log */
 .event-log-bar {
-  margin-top: 8px; padding: 8px 14px;
-  background: var(--surface-raised); border-radius: 6px;
+  margin-top: 8px;
+  padding: 8px 14px;
+  background: var(--surface-raised);
+  border-radius: 6px;
   border: 1px solid var(--border);
 }
 .log-entry {
-  font-family: monospace; font-size: 11px; padding: 2px 0;
-  display: flex; gap: 8px;
-  border-left: 3px solid var(--border); padding-left: 8px; margin-bottom: 1px;
+  font-family: monospace;
+  font-size: 11px;
+  padding: 2px 0;
+  display: flex;
+  gap: 8px;
+  border-left: 3px solid var(--border);
+  padding-left: 8px;
+  margin-bottom: 1px;
 }
-.log-entry.update { border-left-color: var(--success); }
-.log-entry.warning { border-left-color: var(--danger); }
-.log-entry.info { border-left-color: var(--accent); }
-.log-time { color: var(--text-muted); }
-.log-msg { color: var(--text); }
+.log-entry.update {
+  border-left-color: var(--success);
+}
+.log-entry.warning {
+  border-left-color: var(--danger);
+}
+.log-entry.info {
+  border-left-color: var(--accent);
+}
+.log-time {
+  color: var(--text-muted);
+}
+.log-msg {
+  color: var(--text);
+}
 </style>

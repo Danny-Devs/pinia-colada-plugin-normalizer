@@ -8,13 +8,19 @@
 
 // Plugin
 export {
-  PiniaColadaNormalizer, useEntityStore, invalidateEntity,
-  updateQueryData, removeEntityFromAllQueries,
-  useNormalizeMutation, normalize, denormalize,
-} from './plugin'
+  PiniaColadaNormalizer,
+  useEntityStore,
+  invalidateEntity,
+  updateQueryData,
+  deleteEntity,
+  useNormalizeMutation,
+} from "./plugin";
+
+/** @deprecated Use `deleteEntity` instead. Will be removed in 1.0. */
+export { deleteEntity as removeEntityFromAllQueries } from "./plugin";
 
 // Entity Store
-export { createEntityStore } from './store'
+export { createEntityStore } from "./store";
 
 // Composables (Phase 2: Real-Time)
 export {
@@ -23,18 +29,17 @@ export {
   onEntityRemoved,
   useOptimisticUpdate,
   createCoalescer,
-} from './composables'
-export type { OptimisticTransaction } from './composables'
+} from "./composables";
+export type { OptimisticTransaction } from "./composables";
 
 // Composables (Phase 3: Performance & DX)
-export {
-  useEntityRef,
-  useEntityQuery,
-  createEntityIndex,
-} from './composables'
+export { useEntityRef, useEntityQuery, createEntityIndex } from "./composables";
+
+// Composables (Phase 4: Cache Redirects)
+export { useCachedEntity } from "./composables";
 
 // Types & Helpers
-export { defineEntity } from './types'
+export { defineEntity } from "./types";
 export type {
   EntityStore,
   EntityRecord,
@@ -45,4 +50,4 @@ export type {
   ResolveEntity,
   NormalizerPluginOptions,
   NormalizerQueryOptions,
-} from './types'
+} from "./types";

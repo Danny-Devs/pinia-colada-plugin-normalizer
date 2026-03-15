@@ -10,11 +10,11 @@
  * @module pinia-colada-plugin-normalizer/composables
  */
 
-import { computed, shallowRef, toValue } from 'vue'
-import type { ComputedRef, MaybeRefOrGetter, ShallowRef } from 'vue'
-import type { Pinia } from 'pinia'
-import type { EntityEvent, EntityRecord, EntityRegistry, ResolveEntity } from './types'
-import { useEntityStore } from './plugin'
+import { computed, getCurrentScope, onScopeDispose, shallowRef, toValue } from "vue";
+import type { ComputedRef, MaybeRefOrGetter } from "vue";
+import type { Pinia } from "pinia";
+import type { EntityEvent, EntityRecord, EntityRegistry } from "./types";
+import { useEntityStore, denormalize } from "./plugin";
 
 // ─────────────────────────────────────────────
 // Phase 2: WebSocket Adapter Hooks
@@ -32,22 +32,34 @@ import { useEntityStore } from './plugin'
  * })
  * ```
  */
-export function onEntityAdded<K extends string & keyof EntityRegistry>(entityType: K, callback: (event: EntityEvent<EntityRegistry[K]>) => void, pinia?: Pinia): () => void
-export function onEntityAdded(entityType: string, callback: (event: EntityEvent) => void, pinia?: Pinia): () => void
+export function onEntityAdded<K extends string & keyof EntityRegistry>(
+  entityType: K,
+  callback: (event: EntityEvent<EntityRegistry[K]>) => void,
+  pinia?: Pinia,
+): () => void;
+export function onEntityAdded(
+  entityType: string,
+  callback: (event: EntityEvent) => void,
+  pinia?: Pinia,
+): () => void;
 export function onEntityAdded(
   entityType: string,
   callback: (event: EntityEvent) => void,
   pinia?: Pinia,
 ): () => void {
-  const store = useEntityStore(pinia)
-  return store.subscribe(
+  const store = useEntityStore(pinia);
+  const unsub = store.subscribe(
     (event) => {
-      if (event.type === 'set' && event.previousData == null) {
-        callback(event)
+      if (event.type === "set" && event.previousData == null) {
+        callback(event);
       }
     },
     { entityType },
-  )
+  );
+  if (getCurrentScope()) {
+    onScopeDispose(unsub);
+  }
+  return unsub;
 }
 
 /**
@@ -61,22 +73,34 @@ export function onEntityAdded(
  * })
  * ```
  */
-export function onEntityUpdated<K extends string & keyof EntityRegistry>(entityType: K, callback: (event: EntityEvent<EntityRegistry[K]>) => void, pinia?: Pinia): () => void
-export function onEntityUpdated(entityType: string, callback: (event: EntityEvent) => void, pinia?: Pinia): () => void
+export function onEntityUpdated<K extends string & keyof EntityRegistry>(
+  entityType: K,
+  callback: (event: EntityEvent<EntityRegistry[K]>) => void,
+  pinia?: Pinia,
+): () => void;
+export function onEntityUpdated(
+  entityType: string,
+  callback: (event: EntityEvent) => void,
+  pinia?: Pinia,
+): () => void;
 export function onEntityUpdated(
   entityType: string,
   callback: (event: EntityEvent) => void,
   pinia?: Pinia,
 ): () => void {
-  const store = useEntityStore(pinia)
-  return store.subscribe(
+  const store = useEntityStore(pinia);
+  const unsub = store.subscribe(
     (event) => {
-      if (event.type === 'set' && event.previousData != null) {
-        callback(event)
+      if (event.type === "set" && event.previousData != null) {
+        callback(event);
       }
     },
     { entityType },
-  )
+  );
+  if (getCurrentScope()) {
+    onScopeDispose(unsub);
+  }
+  return unsub;
 }
 
 /**
@@ -91,22 +115,34 @@ export function onEntityUpdated(
  * })
  * ```
  */
-export function onEntityRemoved<K extends string & keyof EntityRegistry>(entityType: K, callback: (event: EntityEvent<EntityRegistry[K]>) => void, pinia?: Pinia): () => void
-export function onEntityRemoved(entityType: string, callback: (event: EntityEvent) => void, pinia?: Pinia): () => void
+export function onEntityRemoved<K extends string & keyof EntityRegistry>(
+  entityType: K,
+  callback: (event: EntityEvent<EntityRegistry[K]>) => void,
+  pinia?: Pinia,
+): () => void;
+export function onEntityRemoved(
+  entityType: string,
+  callback: (event: EntityEvent) => void,
+  pinia?: Pinia,
+): () => void;
 export function onEntityRemoved(
   entityType: string,
   callback: (event: EntityEvent) => void,
   pinia?: Pinia,
 ): () => void {
-  const store = useEntityStore(pinia)
-  return store.subscribe(
+  const store = useEntityStore(pinia);
+  const unsub = store.subscribe(
     (event) => {
-      if (event.type === 'remove') {
-        callback(event)
+      if (event.type === "remove") {
+        callback(event);
       }
     },
     { entityType },
-  )
+  );
+  if (getCurrentScope()) {
+    onScopeDispose(unsub);
+  }
+  return unsub;
 }
 
 // ─────────────────────────────────────────────
@@ -145,28 +181,28 @@ export function useEntityRef<K extends string & keyof EntityRegistry>(
   entityType: K,
   id: MaybeRefOrGetter<string>,
   pinia?: Pinia,
-): ComputedRef<EntityRegistry[K] | undefined>
+): ComputedRef<EntityRegistry[K] | undefined>;
 export function useEntityRef(
   entityType: string,
   id: MaybeRefOrGetter<string>,
   pinia?: Pinia,
-): ComputedRef<EntityRecord | undefined>
+): ComputedRef<EntityRecord | undefined>;
 export function useEntityRef(
   entityType: string,
   id: MaybeRefOrGetter<string>,
   pinia?: Pinia,
 ): ComputedRef<EntityRecord | undefined> {
-  const store = useEntityStore(pinia)
+  const store = useEntityStore(pinia);
 
   // Computed handles both static and reactive IDs.
   // When id is static, toValue() is a no-op and the computed
   // only re-runs when the entity's ShallowRef changes.
   // When id is reactive, the computed re-runs on ID change too.
   return computed(() => {
-    const resolvedId = toValue(id)
-    if (!store.has(entityType, resolvedId)) return undefined
-    return store.get(entityType, resolvedId).value
-  })
+    const resolvedId = toValue(id);
+    if (!store.has(entityType, resolvedId)) return undefined;
+    return store.get(entityType, resolvedId).value;
+  });
 }
 
 // ─────────────────────────────────────────────
@@ -177,10 +213,10 @@ export function useEntityRef(
  * Mutation recorded within an optimistic transaction.
  */
 interface OptimisticMutation {
-  entityType: string
-  id: string
-  type: 'set' | 'remove'
-  data?: EntityRecord
+  entityType: string;
+  id: string;
+  type: "set" | "remove";
+  data?: EntityRecord;
 }
 
 /**
@@ -194,13 +230,13 @@ interface OptimisticMutation {
  */
 export interface OptimisticTransaction {
   /** Apply an optimistic entity update within this transaction. */
-  set(entityType: string, id: string, data: EntityRecord): void
+  set(entityType: string, id: string, data: EntityRecord): void;
   /** Optimistically remove an entity within this transaction. */
-  remove(entityType: string, id: string): void
+  remove(entityType: string, id: string): void;
   /** Commit — server data has arrived, drop optimistic state. */
-  commit(): void
+  commit(): void;
   /** Rollback — mutation failed, restore server truth + replay remaining transactions. */
-  rollback(): void
+  rollback(): void;
 }
 
 /**
@@ -242,17 +278,17 @@ export interface OptimisticTransaction {
  * ```
  */
 export function useOptimisticUpdate(pinia?: Pinia) {
-  const store = useEntityStore(pinia)
+  const store = useEntityStore(pinia);
 
   // Server truth snapshots — captured before optimistic mutations modify an entity.
   // Key: 'entityType:id', Value: { existed: boolean, data?: EntityRecord }
-  const serverTruth = new Map<string, { existed: boolean; data?: EntityRecord }>()
+  const serverTruth = new Map<string, { existed: boolean; data?: EntityRecord }>();
 
   // Active transactions — maintained in order for deterministic replay
-  const activeTransactions: Array<{ mutations: OptimisticMutation[] }> = []
+  const activeTransactions: Array<{ mutations: OptimisticMutation[] }> = [];
 
   function entityKey(entityType: string, id: string): string {
-    return `${entityType}:${id}`
+    return `${entityType}:${id}`;
   }
 
   /**
@@ -261,13 +297,13 @@ export function useOptimisticUpdate(pinia?: Pinia) {
    * to the same entity reuse the original snapshot.
    */
   function snapshotIfNeeded(entityType: string, id: string): void {
-    const key = entityKey(entityType, id)
+    const key = entityKey(entityType, id);
     if (!serverTruth.has(key)) {
-      const existed = store.has(entityType, id)
+      const existed = store.has(entityType, id);
       serverTruth.set(key, {
         existed,
         data: existed ? { ...store.get(entityType, id).value! } : undefined,
-      })
+      });
     }
   }
 
@@ -278,30 +314,30 @@ export function useOptimisticUpdate(pinia?: Pinia) {
   function recompute(affectedKeys: Set<string>): void {
     // Step 1: Restore server truth for affected entities
     for (const key of affectedKeys) {
-      const truth = serverTruth.get(key)
-      if (!truth) continue
+      const truth = serverTruth.get(key);
+      if (!truth) continue;
 
-      const [entityType, id] = splitKey(key)
+      const [entityType, id] = splitKey(key);
 
       // Check if any remaining active transaction references this entity
       const stillReferenced = activeTransactions.some((tx) =>
         tx.mutations.some((m) => entityKey(m.entityType, m.id) === key),
-      )
+      );
 
       if (!stillReferenced) {
         // No active transaction references this entity — restore and clean up
         if (truth.existed && truth.data) {
-          store.replace(entityType, id, truth.data)
+          store.replace(entityType, id, truth.data);
         } else if (!truth.existed) {
-          store.remove(entityType, id)
+          store.remove(entityType, id);
         }
-        serverTruth.delete(key)
+        serverTruth.delete(key);
       } else {
         // Still referenced — restore server truth, then replay will re-apply
         if (truth.existed && truth.data) {
-          store.replace(entityType, id, truth.data)
+          store.replace(entityType, id, truth.data);
         } else if (!truth.existed && store.has(entityType, id)) {
-          store.remove(entityType, id)
+          store.remove(entityType, id);
         }
       }
     }
@@ -309,118 +345,110 @@ export function useOptimisticUpdate(pinia?: Pinia) {
     // Step 2: Replay all active transactions in order
     for (const tx of activeTransactions) {
       for (const mutation of tx.mutations) {
-        if (mutation.type === 'set' && mutation.data) {
-          store.set(mutation.entityType, mutation.id, mutation.data)
-        } else if (mutation.type === 'remove') {
-          store.remove(mutation.entityType, mutation.id)
+        if (mutation.type === "set" && mutation.data) {
+          store.set(mutation.entityType, mutation.id, mutation.data);
+        } else if (mutation.type === "remove") {
+          store.remove(mutation.entityType, mutation.id);
         }
       }
     }
   }
 
   function splitKey(key: string): [string, string] {
-    const idx = key.indexOf(':')
-    return [key.slice(0, idx), key.slice(idx + 1)]
+    const idx = key.indexOf(":");
+    return [key.slice(0, idx), key.slice(idx + 1)];
   }
 
   /**
    * Create a multi-mutation transaction.
    */
   function transaction(): OptimisticTransaction {
-    const mutations: OptimisticMutation[] = []
-    const txEntry = { mutations }
-    activeTransactions.push(txEntry)
+    const mutations: OptimisticMutation[] = [];
+    const txEntry = { mutations };
+    activeTransactions.push(txEntry);
 
     return {
       set(entityType: string, id: string, data: EntityRecord) {
-        snapshotIfNeeded(entityType, id)
-        mutations.push({ entityType, id, type: 'set', data })
-        store.set(entityType, id, data)
+        snapshotIfNeeded(entityType, id);
+        mutations.push({ entityType, id, type: "set", data });
+        store.set(entityType, id, data);
       },
 
       remove(entityType: string, id: string) {
-        snapshotIfNeeded(entityType, id)
-        mutations.push({ entityType, id, type: 'remove' })
-        store.remove(entityType, id)
+        snapshotIfNeeded(entityType, id);
+        mutations.push({ entityType, id, type: "remove" });
+        store.remove(entityType, id);
       },
 
       commit() {
-        const idx = activeTransactions.indexOf(txEntry)
-        if (idx === -1) return // already committed/rolled back
+        const idx = activeTransactions.indexOf(txEntry);
+        if (idx === -1) return; // already committed/rolled back
 
         // Collect affected keys
-        const affectedKeys = new Set(
-          mutations.map((m) => entityKey(m.entityType, m.id)),
-        )
+        const affectedKeys = new Set(mutations.map((m) => entityKey(m.entityType, m.id)));
 
         // Remove this transaction
-        activeTransactions.splice(idx, 1)
+        activeTransactions.splice(idx, 1);
 
         // Clean up or update server truth for affected entities
         for (const key of affectedKeys) {
           const stillReferenced = activeTransactions.some((tx) =>
             tx.mutations.some((m) => entityKey(m.entityType, m.id) === key),
-          )
+          );
           if (!stillReferenced) {
-            serverTruth.delete(key)
+            serverTruth.delete(key);
           } else {
             // Update server truth by applying this transaction's mutations on top
             // of the OLD server truth. We can't use the current store value because
             // it includes other transactions' optimistic mutations.
-            const truth = serverTruth.get(key)
+            const truth = serverTruth.get(key);
             if (truth) {
-              let newData = truth.data ? { ...truth.data } : undefined
+              let newData = truth.data ? { ...truth.data } : undefined;
               for (const m of mutations) {
                 if (entityKey(m.entityType, m.id) === key) {
-                  if (m.type === 'set' && m.data) {
-                    newData = newData ? { ...newData, ...m.data } : { ...m.data }
-                  } else if (m.type === 'remove') {
-                    newData = undefined
+                  if (m.type === "set" && m.data) {
+                    newData = newData ? { ...newData, ...m.data } : { ...m.data };
+                  } else if (m.type === "remove") {
+                    newData = undefined;
                   }
                 }
               }
               serverTruth.set(key, {
                 existed: newData != null,
                 data: newData,
-              })
+              });
             }
           }
         }
       },
 
       rollback() {
-        const idx = activeTransactions.indexOf(txEntry)
-        if (idx === -1) return // already committed/rolled back
+        const idx = activeTransactions.indexOf(txEntry);
+        if (idx === -1) return; // already committed/rolled back
 
         // Collect affected keys before removing
-        const affectedKeys = new Set(
-          mutations.map((m) => entityKey(m.entityType, m.id)),
-        )
+        const affectedKeys = new Set(mutations.map((m) => entityKey(m.entityType, m.id)));
 
         // Remove this transaction
-        activeTransactions.splice(idx, 1)
+        activeTransactions.splice(idx, 1);
 
         // Restore server truth + replay remaining transactions
-        recompute(affectedKeys)
+        recompute(affectedKeys);
       },
-    }
+    };
   }
 
   /**
    * Simple single-mutation convenience.
    * Creates a transaction with one `set` mutation and returns a rollback function.
    */
-  function apply(
-    entityType: string,
-    id: string,
-    data: EntityRecord,
-  ): () => void {
-    const tx = transaction()
-    tx.set(entityType, id, data)
-    return () => tx.rollback()
+  function apply(entityType: string, id: string, data: EntityRecord): () => void {
+    const tx = transaction();
+    tx.set(entityType, id, data);
+    return () => tx.rollback();
   }
 
-  return { apply, transaction }
+  return { apply, transaction };
 }
 
 // ─────────────────────────────────────────────
@@ -451,29 +479,29 @@ export function createCoalescer<T = string>(
   onFlush: (items: T[]) => void | Promise<void>,
   delay = 50,
 ): { add: (item: T) => void; flush: () => void } {
-  let pending: T[] = []
-  let timer: ReturnType<typeof setTimeout> | null = null
+  let pending: T[] = [];
+  let timer: ReturnType<typeof setTimeout> | null = null;
 
   function add(item: T) {
-    pending.push(item)
+    pending.push(item);
     if (!timer) {
-      timer = setTimeout(flush, delay)
+      timer = setTimeout(flush, delay);
     }
   }
 
   function flush() {
-    const batch = pending
-    pending = []
+    const batch = pending;
+    pending = [];
     if (timer) {
-      clearTimeout(timer)
-      timer = null
+      clearTimeout(timer);
+      timer = null;
     }
     if (batch.length > 0) {
-      onFlush(batch)
+      onFlush(batch);
     }
   }
 
-  return { add, flush }
+  return { add, flush };
 }
 
 // ─────────────────────────────────────────────
@@ -498,19 +526,27 @@ export function createCoalescer<T = string>(
  * const allContacts = useEntityQuery('contact')
  * ```
  */
-export function useEntityQuery<K extends string & keyof EntityRegistry>(entityType: K, filter?: (entity: EntityRegistry[K]) => boolean, pinia?: Pinia): ComputedRef<EntityRegistry[K][]>
-export function useEntityQuery(entityType: string, filter?: (entity: EntityRecord) => boolean, pinia?: Pinia): ComputedRef<EntityRecord[]>
+export function useEntityQuery<K extends string & keyof EntityRegistry>(
+  entityType: K,
+  filter?: (entity: EntityRegistry[K]) => boolean,
+  pinia?: Pinia,
+): ComputedRef<EntityRegistry[K][]>;
+export function useEntityQuery(
+  entityType: string,
+  filter?: (entity: EntityRecord) => boolean,
+  pinia?: Pinia,
+): ComputedRef<EntityRecord[]>;
 export function useEntityQuery(
   entityType: string,
   filter?: (entity: EntityRecord) => boolean,
   pinia?: Pinia,
 ): ComputedRef<EntityRecord[]> {
-  const store = useEntityStore(pinia)
-  const allOfType = store.getByType(entityType)
+  const store = useEntityStore(pinia);
+  const allOfType = store.getByType(entityType);
 
-  if (!filter) return allOfType
+  if (!filter) return allOfType;
 
-  return computed(() => allOfType.value.filter(filter))
+  return computed(() => allOfType.value.filter(filter));
 }
 
 // ─────────────────────────────────────────────
@@ -553,92 +589,171 @@ export function createEntityIndex(
   fieldOrFn: string | ((entity: EntityRecord) => string | undefined),
   pinia?: Pinia,
 ): {
-  get: (value: string) => ComputedRef<EntityRecord[]>
-  dispose: () => void
+  get: (value: string) => ComputedRef<EntityRecord[]>;
+  dispose: () => void;
 } {
-  const store = useEntityStore(pinia)
-  const extractor = typeof fieldOrFn === 'string'
-    ? (entity: EntityRecord) => entity[fieldOrFn] as string | undefined
-    : fieldOrFn
+  const store = useEntityStore(pinia);
+  const extractor =
+    typeof fieldOrFn === "string"
+      ? (entity: EntityRecord) => entity[fieldOrFn] as string | undefined
+      : fieldOrFn;
 
   // Internal index: fieldValue → Set<entityId>
-  const index = new Map<string, Set<string>>()
+  const index = new Map<string, Set<string>>();
   // Reverse lookup: entityId → fieldValue (for cleanup on update)
-  const entityValues = new Map<string, string>()
+  const entityValues = new Map<string, string>();
 
   // Build initial index from existing entities.
   // Uses getEntriesByType() which returns canonical store IDs alongside data,
   // avoiding the heuristic ID guessing that fails with composite keys.
   for (const { id, data } of store.getEntriesByType(entityType)) {
-    const value = extractor(data)
+    const value = extractor(data);
     if (value != null) {
-      addToIndex(id, value)
+      addToIndex(id, value);
     }
   }
 
   // Version ref — bumped on index changes to trigger computed recomputation
-  const version = shallowRef(0)
+  const version = shallowRef(0);
 
   // Single subscription: update index + bump version
-  const unsub = store.subscribe((event) => {
-    const id = event.id
+  const unsub = store.subscribe(
+    (event) => {
+      const id = event.id;
 
-    // Remove old index entry
-    const oldValue = entityValues.get(id)
-    if (oldValue != null) {
-      removeFromIndex(id, oldValue)
-    }
-
-    // Add new index entry
-    if (event.type === 'set' && event.data) {
-      const newValue = extractor(event.data)
-      if (newValue != null) {
-        addToIndex(id, newValue)
+      // Remove old index entry
+      const oldValue = entityValues.get(id);
+      if (oldValue != null) {
+        removeFromIndex(id, oldValue);
       }
-    }
 
-    // Bump version for reactive computed recomputation
-    version.value++
-  }, { entityType })
+      // Add new index entry
+      if (event.type === "set" && event.data) {
+        const newValue = extractor(event.data);
+        if (newValue != null) {
+          addToIndex(id, newValue);
+        }
+      }
+
+      // Bump version for reactive computed recomputation
+      version.value++;
+    },
+    { entityType },
+  );
 
   function addToIndex(id: string, value: string) {
-    let set = index.get(value)
+    let set = index.get(value);
     if (!set) {
-      set = new Set()
-      index.set(value, set)
+      set = new Set();
+      index.set(value, set);
     }
-    set.add(id)
-    entityValues.set(id, value)
+    set.add(id);
+    entityValues.set(id, value);
   }
 
   function removeFromIndex(id: string, value: string) {
-    const set = index.get(value)
+    const set = index.get(value);
     if (set) {
-      set.delete(id)
-      if (set.size === 0) index.delete(value)
+      set.delete(id);
+      if (set.size === 0) index.delete(value);
     }
-    entityValues.delete(id)
+    entityValues.delete(id);
+  }
+
+  function dispose() {
+    unsub();
+    index.clear();
+    entityValues.clear();
+  }
+
+  if (getCurrentScope()) {
+    onScopeDispose(dispose);
   }
 
   return {
     get(value: string): ComputedRef<EntityRecord[]> {
       return computed(() => {
         // Track version for reactivity
-        void version.value
-        const ids = index.get(value)
-        if (!ids || ids.size === 0) return []
-        const result: EntityRecord[] = []
+        void version.value;
+        const ids = index.get(value);
+        if (!ids || ids.size === 0) return [];
+        const result: EntityRecord[] = [];
         for (const id of ids) {
-          const entity = store.get(entityType, id).value
-          if (entity != null) result.push(entity)
+          const entity = store.get(entityType, id).value;
+          if (entity != null) result.push(entity);
         }
-        return result
-      })
+        return result;
+      });
     },
-    dispose() {
-      unsub()
-      index.clear()
-      entityValues.clear()
-    },
-  }
+    dispose,
+  };
+}
+
+// ─────────────────────────────────────────────
+// Phase 4: Cache Redirects
+// ─────────────────────────────────────────────
+
+/**
+ * Returns a function compatible with Pinia Colada's `placeholderData` option.
+ * If the entity exists in the normalizer's entity store (e.g., fetched by a
+ * prior list query), it is returned immediately as placeholder data while the
+ * real query fetches in the background (stale-while-revalidate).
+ *
+ * The returned entity is fully denormalized — nested EntityRefs are resolved
+ * to their live store data, so templates never see opaque ref objects.
+ *
+ * **Important:** Placeholder data may be partial. If the list query only
+ * returned `{ id, name }` but the detail page renders `email`, that field
+ * will be `undefined` until the real fetch completes. Guard your template
+ * with `isPlaceholderData` for fields that may be missing.
+ *
+ * @param entityType - The entity type to look up
+ * @param id - Entity ID (static string or reactive getter)
+ * @param pinia - Optional Pinia instance
+ * @returns A function suitable for `useQuery({ placeholderData: ... })`
+ *
+ * @example
+ * ```typescript
+ * import { useCachedEntity } from 'pinia-colada-plugin-normalizer'
+ * import { useQuery } from '@pinia/colada'
+ *
+ * const { data, isPlaceholderData } = useQuery({
+ *   key: ['contact', id],
+ *   query: () => fetchContact(id),
+ *   placeholderData: useCachedEntity('contact', () => id.value),
+ * })
+ *
+ * // In template: guard partial fields
+ * // <div v-if="!isPlaceholderData || data?.email">{{ data?.email }}</div>
+ * ```
+ */
+export function useCachedEntity<K extends string & keyof EntityRegistry>(
+  entityType: K,
+  id: MaybeRefOrGetter<string>,
+  pinia?: Pinia,
+): () => EntityRegistry[K] | undefined;
+export function useCachedEntity(
+  entityType: string,
+  id: MaybeRefOrGetter<string>,
+  pinia?: Pinia,
+): () => EntityRecord | undefined;
+export function useCachedEntity(
+  entityType: string,
+  id: MaybeRefOrGetter<string>,
+  pinia?: Pinia,
+): () => EntityRecord | undefined {
+  const store = useEntityStore(pinia);
+
+  return () => {
+    const resolvedId = toValue(id);
+    if (!store.has(entityType, resolvedId)) return undefined;
+
+    const rawEntity = store.get(entityType, resolvedId).value;
+    if (rawEntity == null) return undefined;
+
+    // Denormalize to resolve nested EntityRefs.
+    // Without this, templates would render opaque Symbol-marked ref objects
+    // instead of actual nested entity data.
+    return denormalize(rawEntity, store) as EntityRecord;
+  };
 }

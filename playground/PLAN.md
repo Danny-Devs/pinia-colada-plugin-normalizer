@@ -12,14 +12,14 @@ This isn't just a "does it work" test. This is the demo we link in Discussion #5
 
 ### Core value props to demonstrate
 
-| Strength | How we show it | What the user sees |
-|----------|---------------|-------------------|
-| **Multi-query deduplication** | Same contact appears in 3 different queries (list, detail, team members) | Update contact name once → all 3 views reflect it instantly |
-| **WebSocket push without invalidation** | Simulated WS panel pushes entity updates | Click "simulate WS event" → entity store updates → all views update. No refetch, no invalidation. |
-| **Hybrid normalization** | Contacts are normalized, team metadata is not | DevTools-style panel shows entity store (flat) alongside query cache (with refs + raw data) |
-| **defineEntity with custom ID** | Contacts use `contactId`, not `id` | Config is visible in source, proves escape hatch works |
-| **useEntityStore() composable** | WebSocket handler uses it directly | Clean 3-line WS integration code visible in demo |
-| **Zero stale data** | Side-by-side views of the same entity | Edit in one panel, see it change in all others simultaneously |
+| Strength                                | How we show it                                                           | What the user sees                                                                                |
+| --------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| **Multi-query deduplication**           | Same contact appears in 3 different queries (list, detail, team members) | Update contact name once → all 3 views reflect it instantly                                       |
+| **WebSocket push without invalidation** | Simulated WS panel pushes entity updates                                 | Click "simulate WS event" → entity store updates → all views update. No refetch, no invalidation. |
+| **Hybrid normalization**                | Contacts are normalized, team metadata is not                            | DevTools-style panel shows entity store (flat) alongside query cache (with refs + raw data)       |
+| **defineEntity with custom ID**         | Contacts use `contactId`, not `id`                                       | Config is visible in source, proves escape hatch works                                            |
+| **useEntityStore() composable**         | WebSocket handler uses it directly                                       | Clean 3-line WS integration code visible in demo                                                  |
+| **Zero stale data**                     | Side-by-side views of the same entity                                    | Edit in one panel, see it change in all others simultaneously                                     |
 
 ### What we're NOT showing (save for later)
 
@@ -76,31 +76,31 @@ A single-page app with 4 panels visible simultaneously:
 ```typescript
 // Entities (normalized)
 interface Contact {
-  contactId: string  // custom ID field — demonstrates defineEntity
-  name: string
-  email: string
-  teamId: string
-  status: 'active' | 'inactive'
-  avatarUrl: string
+  contactId: string; // custom ID field — demonstrates defineEntity
+  name: string;
+  email: string;
+  teamId: string;
+  status: "active" | "inactive";
+  avatarUrl: string;
 }
 
 // Not normalized (stays in query cache as-is)
 interface Team {
-  teamId: string
-  name: string
-  description: string
-  memberCount: number  // denormalized count — intentionally NOT normalized
+  teamId: string;
+  name: string;
+  description: string;
+  memberCount: number; // denormalized count — intentionally NOT normalized
 }
 
 // API responses
 interface ContactListResponse {
-  contacts: Contact[]
-  pagination: { page: number; total: number }  // not normalized
+  contacts: Contact[];
+  pagination: { page: number; total: number }; // not normalized
 }
 
 interface TeamResponse {
-  team: Team          // not normalized (no defineEntity for teams)
-  members: Contact[]  // normalized — same contacts as in contact list
+  team: Team; // not normalized (no defineEntity for teams)
+  members: Contact[]; // normalized — same contacts as in contact list
 }
 ```
 
@@ -110,28 +110,31 @@ interface TeamResponse {
 PiniaColadaNormalizer({
   entities: {
     contact: defineEntity({
-      idField: 'contactId',
+      idField: "contactId",
     }),
     // Note: no defineEntity for Team — it stays in query cache as-is
     // This demonstrates the hybrid approach
   },
-})
+});
 ```
 
 ## Technical implementation
 
 ### Mock API
+
 - `fetchContacts()` — returns ContactListResponse
 - `fetchContact(id)` — returns single Contact
 - `fetchTeam(teamId)` — returns TeamResponse with embedded Contact members
 - All return the SAME contact objects with SAME contactIds — proving deduplication
 
 ### Mock WebSocket
+
 - `SimulatedWebSocket` class that emits events on button click
 - Events: `CONTACT_UPDATED`, `CONTACT_ADDED`, `CONTACT_REMOVED`
 - Handler uses `useEntityStore().set()` directly — shows the clean integration
 
 ### Entity Store Inspector
+
 - Real-time view of `entityStore.toJSON()` — shows the flat entity map
 - Shows which queries hold references vs raw data
 - Highlights entities as they update (flash animation)

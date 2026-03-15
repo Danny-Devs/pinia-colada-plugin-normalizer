@@ -15,6 +15,7 @@ A normalized entity caching plugin for Pinia Colada (Vue's data-fetching library
 ### Core pattern: customRef replacement
 
 The plugin replaces `entry.state` (a `ShallowRef`) with a `customRef` during the `extend` hook:
+
 - **Setter**: normalizes incoming data — extracts entities into the store, saves EntityRefs internally
 - **Getter**: denormalizes on read — replaces EntityRefs with live reactive entity data from the store
 
@@ -42,6 +43,7 @@ pnpm test:watch  # watch mode
 ```
 
 83 tests across 4 test files covering:
+
 - Normalize/denormalize engine (22 tests)
 - EntityStore + GC (32 tests)
 - Plugin integration + composables (21 tests)
@@ -58,6 +60,7 @@ pnpm build       # outputs to dist/
 Positioning: **Apollo-style normalization with zero configuration and Vue-native performance.**
 
 Key competitors analyzed (deep code-level comparison in `RESEARCH.md`):
+
 - **normy** — pure normalize/denormalize engine, no reactivity, `@@key` string refs (fragile)
 - **TanStack DB** — client-side reactive database, not a normalizer. Overkill for most apps.
 - **Apollo InMemoryCache** — GraphQL-coupled, per-field dependency tracking, ~5,000+ LOC
@@ -65,6 +68,7 @@ Key competitors analyzed (deep code-level comparison in `RESEARCH.md`):
 Our core differentiators: transparent customRef integration, Vue-native reactivity, ~1,100 LOC / 0 deps, swappable EntityStore interface, zero-config for standard APIs.
 
 Resolved gaps (March 2026):
+
 - Per-entity denorm cache invalidation (was: clears ALL on ANY change)
 - Entity GC via retain/release/gc (was: entities live forever)
 - Custom merge policies via `defineEntity({ merge })` (was: shallow merge only)
@@ -74,6 +78,7 @@ All competitive gaps from March 2026 analysis have been addressed.
 See `SPEC.md` § "Competitive Gaps" for the full resolved list.
 
 Anti-patterns to avoid (from competitors):
+
 - Apollo's complexity spiral (don't chase features at cost of simplicity)
 - Normy's `@@` string prefix (our Symbol approach is superior)
 - TanStack DB's monolithic state manager (keep optimistic updates as composable layer)
