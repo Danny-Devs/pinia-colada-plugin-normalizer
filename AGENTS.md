@@ -57,3 +57,4 @@ pnpm build       # outputs to dist/
 - Deep merge entities (shallow merge only — `{ ...existing, ...incoming }`)
 - Use module-level singletons for state (breaks SSR)
 - Write to `entry.state.value` in `after()` callbacks (bypasses action system)
+- Build another plugin that replaces `entry.state` — only one plugin can own it (we do)

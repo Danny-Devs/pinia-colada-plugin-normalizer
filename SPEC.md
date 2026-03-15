@@ -138,6 +138,17 @@ Following Eduardo's `writing-plugins.md` guide exactly:
 3. **Module augmentation** — `declare module '@pinia/colada'` extending `UseQueryOptions`, `UseQueryOptionsGlobal`, `UseQueryEntryExtensions`
 4. **`defineStore` for SSR safety** — entity store scoped per Pinia instance, not module-level singleton. Each SSR request gets its own store automatically.
 
+### Plugin compatibility constraint: `entry.state` exclusivity
+
+This plugin replaces `entry.state` with a `customRef` during the `extend` hook. **Only one plugin can replace `entry.state`.** If another plugin also replaces `entry.state`, the last one installed wins and the first one's interception is silently lost.
+
+In practice this is not a problem today — no existing Pinia Colada plugin touches `entry.state`:
+- `delay` replaces `entry.asyncStatus` (different property)
+- `retry`, `auto-refetch` hook `fetch` (different action)
+- `cache-persister` hooks `setEntryState` read-only (reads `.value`, doesn't replace the ref)
+
+But it's a theoretical constraint worth noting. If a future plugin needs to intercept `entry.state`, it would need to coordinate with this plugin (e.g., wrap our customRef rather than replacing it).
+
 ### Safety measures
 
 - **Symbol-based EntityRef marker** — prevents collision with API data (no string property conflicts)
