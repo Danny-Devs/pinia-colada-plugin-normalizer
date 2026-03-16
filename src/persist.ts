@@ -55,6 +55,9 @@ function openDatabase(dbName: string): Promise<IDBDatabase> {
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
+    // If another tab holds a connection and we need to upgrade, open hangs
+    // indefinitely without this handler. Reject so the ready promise settles.
+    request.onblocked = () => reject(new Error("IDB open blocked by another connection"));
   });
 }
 
@@ -135,6 +138,7 @@ export function enablePersistence(
   let disabled = false;
   let isHydrating = false;
   let disposed = false;
+  let flushing = false;
 
   // ── SSR guard ──────────────────────────────
   if (typeof indexedDB === "undefined") {
@@ -146,6 +150,9 @@ export function enablePersistence(
   }
 
   // ── Subscribe to store changes ─────────────
+  // IMPORTANT: store.subscribe fires synchronously within store.set().
+  // The isHydrating guard relies on this — if subscribe were async/batched,
+  // hydration would trigger a write-storm (re-persisting loaded entities).
   const unsub = store.subscribe((event) => {
     if (isHydrating || disabled || disposed) return;
 
@@ -174,9 +181,10 @@ export function enablePersistence(
       clearTimeout(flushTimer);
       flushTimer = null;
     }
-    if (!db || disabled || disposed) return;
+    if (!db || disabled || disposed || flushing) return;
     if (dirtySaves.size === 0 && dirtyDeletes.size === 0) return;
 
+    flushing = true;
     const puts = Array.from(dirtySaves.entries()).map(([key, value]) => ({ key, value }));
     const deletes = Array.from(dirtyDeletes);
     dirtySaves.clear();
@@ -190,6 +198,12 @@ export function enablePersistence(
       if (process.env.NODE_ENV !== "production") {
         console.warn("[pcn-persist] Write failed, persistence disabled:", err);
       }
+    } finally {
+      flushing = false;
+      // If new writes arrived during the flush, schedule another
+      if (dirtySaves.size > 0 || dirtyDeletes.size > 0) {
+        scheduleFlush();
+      }
     }
   }
 
@@ -198,6 +212,14 @@ export function enablePersistence(
     .then(async (database) => {
       if (disposed) { database.close(); return; }
       db = database;
+
+      // If another tab opens this DB with a higher version, close gracefully
+      // to unblock the other tab's upgrade. Persistence is disabled for this tab.
+      db.onversionchange = () => {
+        db?.close();
+        db = null;
+        disabled = true;
+      };
 
       isHydrating = true;
       try {

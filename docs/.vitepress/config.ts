@@ -3,7 +3,6 @@ import { defineConfig } from "vitepress";
 export default defineConfig({
   title: "pinia-colada-plugin-normalizer",
   description: "Normalized entity caching for Pinia Colada",
-  srcExclude: ["**/README.md"],
 
   themeConfig: {
     nav: [
