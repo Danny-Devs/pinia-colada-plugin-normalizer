@@ -10,7 +10,10 @@
     "pinia-colada",
     "pinia-colada-plugin",
     "query",
-    "real-time"
+    "real-time",
+    "persistence",
+    "indexeddb",
+    "offline"
   ],
   "homepage": "https://github.com/Danny-Devs/pinia-colada-plugin-normalizer",
   "bugs": {

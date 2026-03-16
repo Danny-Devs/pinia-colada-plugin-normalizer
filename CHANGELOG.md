@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.1.6 (2026-03-15)
+
+### Features
+- **`enablePersistence(store, options?)`** — IndexedDB persistence for the entity store. Entities survive page refresh. Incremental writes via dirty-set tracking (only changed entities flushed per debounce window). Fresh-wins hydration guard ensures server data takes precedence over stale IDB data. Zero runtime dependencies — uses raw IndexedDB API (~160 LOC).
+- **Pagination helpers** — `cursorPagination()` and `offsetPagination()` for `useInfiniteQuery` merge recipes.
+- **`getRefCount(type, id)`** — New `EntityStore` method exposing reference counts for DevTools/debugging.
+- **DevTools polish** — ref count display, entity dependency graph, improved inspector layout.
+
+### Production Hardening
+- `onblocked` handler on IDB open — prevents indefinite hang when another tab holds the connection.
+- `versionchange` listener — closes connection gracefully when another tab upgrades the DB.
+- `flushing` guard prevents concurrent flush race conditions.
+- `visibilitychange` + `beforeunload` lifecycle hooks flush pending writes on tab close.
+- Graceful degradation: quota exceeded → disable + warn. Private browsing → memory-only. SSR → no-op.
+- `_hydrating` flag suppresses write-storm during IDB restoration.
+- `encodeEntityRefs`/`decodeEntityRefs` exported for persistence adapters (Symbol→string for structured clone).
+
+### Docs
+- New **Persistence** guide (setup, how-it-works diagram, options, patterns, edge cases).
+- API reference updated with `enablePersistence`, `PersistenceOptions`, `PersistenceHandle`, `getRefCount`.
+- VitePress docs site: 7 pages (added persistence).
+
+### Tests
+- 131 → 157 tests (+26): 11 persistence tests, 15 pagination tests.
+
 ## 0.1.5 (2026-03-15)
 
 ### Features

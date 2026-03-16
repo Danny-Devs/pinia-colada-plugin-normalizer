@@ -10,6 +10,8 @@ A normalized entity caching plugin for Pinia Colada (Vue's data-fetching library
 - `src/store.ts` — In-memory EntityStore implementation (ShallowRef per entity, reactive Map, GC via retain/release)
 - `src/plugin.ts` — Pinia Colada plugin (customRef replacement of `entry.state`), normalize/denormalize engines, useEntityStore composable (SSR-safe via defineStore)
 - `src/composables.ts` — Real-time composables (WS hooks, optimistic updates, coalescer, entity queries, indexes)
+- `src/persist.ts` — IndexedDB persistence (dirty-set tracking, debounced batch writes, fresh-wins hydration)
+- `src/pagination.ts` — Pagination helpers (cursor, offset) for useInfiniteQuery merge recipes
 - `src/index.ts` — Public API barrel export
 
 ### Core pattern: customRef replacement
@@ -42,12 +44,14 @@ pnpm test        # run tests once
 pnpm test:watch  # watch mode
 ```
 
-83 tests across 4 test files covering:
+157 tests across 6 test files covering:
 
-- Normalize/denormalize engine (22 tests)
-- EntityStore + GC (32 tests)
-- Plugin integration + composables (21 tests)
-- Composables standalone (8 tests)
+- Normalize/denormalize engine (24 tests)
+- EntityStore + GC (38 tests)
+- Plugin integration + composables (59 tests)
+- Composables standalone (11 tests)
+- Persistence — IDB round-trip, fresh-wins, hydration flag, batching (11 tests)
+- Pagination helpers (15 tests)
 
 ## Build
 
@@ -65,7 +69,7 @@ Key competitors analyzed (deep code-level comparison in `RESEARCH.md`):
 - **TanStack DB** — client-side reactive database, not a normalizer. Overkill for most apps.
 - **Apollo InMemoryCache** — GraphQL-coupled, per-field dependency tracking, ~5,000+ LOC
 
-Our core differentiators: transparent customRef integration, Vue-native reactivity, ~1,100 LOC / 0 deps, swappable EntityStore interface, zero-config for standard APIs.
+Our core differentiators: transparent customRef integration, Vue-native reactivity, ~3,500 LOC / 0 deps, swappable EntityStore interface, IndexedDB persistence, zero-config for standard APIs.
 
 Resolved gaps (March 2026):
 

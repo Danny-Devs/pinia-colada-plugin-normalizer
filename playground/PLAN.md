@@ -23,10 +23,13 @@ This isn't just a "does it work" test. This is the demo we link in Discussion #5
 
 ### What we're NOT showing (save for later)
 
-- Persistence (Phase 4)
-- IVM / query planner (Phase 4-5)
+- IVM / query planner (Phase 5)
 - Optimistic updates / three-layer sync (Phase 2)
 - SSR hydration
+
+### What we ARE showing (added after initial plan)
+
+- **Persistence** — entities survive page refresh via IndexedDB. Green "IDB" badge in header. `main.ts` awaits `enablePersistence()` before mounting.
 
 ## App concept: Real-Time Contact Manager
 
