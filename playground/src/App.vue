@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, inject } from "vue";
-import type { Ref } from "vue";
-import type { PersistenceHandle } from "pinia-colada-plugin-normalizer";
-import { useEntityStore } from "pinia-colada-plugin-normalizer";
+import { ref, reactive } from "vue";
 import AppHeader from "./components/AppHeader.vue";
 import ContactList from "./components/ContactList.vue";
 import ContactDetail from "./components/ContactDetail.vue";
@@ -17,19 +14,6 @@ const currentPage = ref("demo");
 const selectedId = ref<string | null>("1");
 const { normalized, entityWrites, rawUpdates, log, applyUpdate, resetDemo } = useDemo();
 const clicked = reactive(new Set<string>());
-
-// Persistence UI state
-const persistence = inject<PersistenceHandle>("persistence");
-const restoredCount = inject<Ref<number>>("restoredCount", ref(0));
-const entityStore = useEntityStore();
-const cacheCleared = ref(false);
-
-function clearCache() {
-  persistence?.dispose();
-  entityStore.clear();
-  indexedDB.deleteDatabase("pcn_playground");
-  cacheCleared.value = true;
-}
 
 function toggleMode() {
   normalized.value = !normalized.value;
@@ -140,27 +124,6 @@ function activateDiana() {
           Without normalization, each query stores its own copy. Update one and the others go stale
           unless you manually invalidate them.
         </template>
-      </div>
-
-      <!-- Persistence status bar -->
-      <div v-if="!cacheCleared" class="persist-bar">
-        <div class="persist-info">
-          <span class="persist-icon">💾</span>
-          <template v-if="restoredCount > 0">
-            <strong>{{ restoredCount }} entities restored</strong> from IndexedDB cache
-          </template>
-          <template v-else>
-            <strong>IndexedDB persistence active</strong> — make changes, then
-            <strong>refresh the page</strong> to see them survive
-          </template>
-        </div>
-        <button class="persist-clear" @click="clearCache" title="Clear IndexedDB cache">
-          Clear cache
-        </button>
-      </div>
-      <div v-else class="persist-bar persist-bar-cleared">
-        <span class="persist-icon">🗑️</span>
-        Cache cleared. <strong>Refresh</strong> to start fresh.
       </div>
 
       <!-- Panels -->
@@ -387,48 +350,6 @@ body {
 .mode-hint.warning {
   background: var(--danger-bg);
   color: var(--danger);
-}
-
-/* Persistence bar */
-.persist-bar {
-  margin-top: 8px;
-  padding: 8px 14px;
-  border-radius: 6px;
-  font-size: 13px;
-  background: var(--accent-bg);
-  color: var(--accent);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.persist-bar-cleared {
-  background: var(--surface-raised);
-  color: var(--text-muted);
-}
-.persist-info {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.persist-icon {
-  font-size: 15px;
-}
-.persist-clear {
-  padding: 3px 10px;
-  border: 1px solid var(--accent);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--accent);
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-  transition: all 0.15s;
-}
-.persist-clear:hover {
-  background: var(--accent);
-  color: #fff;
 }
 
 /* Panels */
