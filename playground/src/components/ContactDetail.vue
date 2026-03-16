@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
- * Contact detail WITH normalization.
- * Uses normalize: true — reads from the shared entity store.
+ * Contact detail WITH normalization + autoRedirect.
+ * Uses key ['contact', id] — matches the registered entity type,
+ * so autoRedirect serves cached data instantly from list queries.
  * Updates via entityStore.set() propagate here automatically.
  */
 import { computed } from "vue";
@@ -12,8 +13,8 @@ const props = defineProps<{ contactId: string | null; normalized: boolean }>();
 
 const enabled = computed(() => !!props.contactId);
 
-const { data: contact, status } = useQuery({
-  key: () => ["contacts", props.contactId!],
+const { data: contact, status, isPlaceholderData } = useQuery({
+  key: () => ["contact", props.contactId!],
   query: () => fetchContact(props.contactId!),
   enabled,
   normalize: true,
@@ -24,12 +25,13 @@ const { data: contact, status } = useQuery({
   <div class="panel">
     <div class="panel-header">
       <h2>Contact Detail</h2>
-      <code class="query-key">['contacts', '{{ contactId }}']</code>
+      <code class="query-key">['contact', '{{ contactId }}']</code>
       <span class="mode-badge on">normalized</span>
+      <span v-if="isPlaceholderData" class="mode-badge cached">instant cache</span>
     </div>
 
     <div v-if="!contactId" class="empty">Click a contact to view details</div>
-    <div v-else-if="status === 'pending'" class="loading">Loading...</div>
+    <div v-else-if="status === 'pending' && !contact" class="loading">Loading...</div>
     <div v-else-if="contact" class="detail">
       <div class="field">
         <label>Name</label>
@@ -37,7 +39,8 @@ const { data: contact, status } = useQuery({
       </div>
       <div class="field">
         <label>Email</label>
-        <span class="value">{{ (contact as Contact).email }}</span>
+        <span v-if="(contact as Contact).email" class="value">{{ (contact as Contact).email }}</span>
+        <span v-else class="value placeholder-shimmer">loading...</span>
       </div>
       <div class="field">
         <label>Role</label>
@@ -86,6 +89,26 @@ h2 {
 .mode-badge.on {
   background: var(--success-bg);
   color: var(--success);
+}
+.mode-badge.cached {
+  background: var(--accent-bg);
+  color: var(--accent);
+  animation: flash 0.6s ease-out;
+}
+@keyframes flash {
+  0% { opacity: 0; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+.placeholder-shimmer {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 13px;
+  animation: shimmer 1s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
 }
 .empty,
 .loading {

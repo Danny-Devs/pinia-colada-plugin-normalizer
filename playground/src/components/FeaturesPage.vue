@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from "vue";
+import { ref, reactive, computed, nextTick } from "vue";
 import { useQuery } from "@pinia/colada";
 import {
   useEntityStore,
@@ -10,6 +10,7 @@ import {
   updateQueryData,
   deleteEntity,
   useEntityQuery,
+  useCachedEntity,
 } from "pinia-colada-plugin-normalizer";
 
 const entityStore = useEntityStore();
@@ -232,6 +233,62 @@ function toggleStatus() {
     });
   }
 }
+
+// ═══════════════════════════════════════════════
+// 5. CACHE REDIRECTS (prefix: cr-)
+// ═══════════════════════════════════════════════
+// Seed entities WITHOUT email — simulates what a list query would provide
+// (list endpoints typically return summary data, not full detail)
+const crContacts = [
+  { contactId: "cr-1", name: "Jack Rivera", role: "Engineer", status: "active" },
+  { contactId: "cr-2", name: "Kate Sato", role: "Designer", status: "active" },
+  { contactId: "cr-3", name: "Leo Chen", role: "PM", status: "active" },
+];
+
+function crSeedEntities() {
+  // Replace (not merge) to ensure email is NOT in the store
+  for (const c of crContacts) entityStore.replace("contact", c.contactId, { ...c });
+}
+crSeedEntities();
+
+const crSelectedId = ref<string | null>(null);
+
+// useCachedEntity returns a function that reads from the entity store
+const crPlaceholderFn = useCachedEntity("contact", () => crSelectedId.value ?? "");
+
+// Simulate a slow detail fetch (750ms) — returns full data including email
+const { data: crDetailData, status: crDetailStatus, isPlaceholderData: crIsPlaceholder } = useQuery({
+  key: () => ["contact", crSelectedId.value!],
+  query: async () => {
+    await new Promise((r) => setTimeout(r, 750));
+    const c = crContacts.find((c) => c.contactId === crSelectedId.value);
+    return c ? { ...c, email: `${c.name.split(" ")[0].toLowerCase()}@acme.com` } : null;
+  },
+  enabled: computed(() => !!crSelectedId.value),
+  normalize: true,
+  placeholderData: crPlaceholderFn,
+});
+
+const crCardRef = ref<HTMLElement | null>(null);
+const crBottomRef = ref<HTMLElement | null>(null);
+
+function crSelect(id: string) {
+  crSelectedId.value = id;
+  // Scroll to bottom of card after DOM renders the detail view.
+  // Double nextTick ensures the v-if content and query data are both rendered.
+  nextTick(() => {
+    nextTick(() => {
+      crBottomRef.value?.scrollIntoView({ behavior: "smooth", block: "end" });
+    });
+  });
+}
+
+function crReset() {
+  crSelectedId.value = null;
+  // Re-seed entities WITHOUT email — this is the key:
+  // replace() overwrites, so email from previous fetches is gone
+  crSeedEntities();
+}
 </script>
 
 <template>
@@ -360,6 +417,62 @@ function toggleStatus() {
           </div>
         </div>
       </div>
+    </section>
+
+    <!-- 5. Cache Redirects -->
+    <section class="feature-card" ref="crCardRef">
+      <h2 class="feature-title">Cache Redirects</h2>
+      <p class="feature-desc">
+        <code>useCachedEntity</code> + <code>autoRedirect</code> — click a contact to see
+        name and role appear <strong>instantly</strong> from the entity store. The email field
+        loads after a 750ms simulated fetch since the list query didn't include it.
+      </p>
+      <div class="feature-demo">
+        <div class="feature-actions">
+          <button
+            v-for="c in crContacts"
+            :key="c.contactId"
+            :class="['btn', crSelectedId === c.contactId ? 'btn-accent' : 'btn-muted']"
+            @click="crSelect(c.contactId)"
+          >
+            {{ c.name }}
+          </button>
+          <button class="btn btn-muted" @click="crReset">Reset</button>
+        </div>
+        <div v-if="crSelectedId" class="cr-detail">
+          <div class="cr-detail-header">
+            <span class="label">Detail view:</span>
+            <span v-if="crIsPlaceholder" class="badge pending">
+              from cache — fetching email...
+            </span>
+            <span v-else-if="crDetailStatus === 'success'" class="badge success">
+              complete
+            </span>
+            <span v-else class="badge pending">loading...</span>
+          </div>
+          <div v-if="crDetailData" class="cr-fields">
+            <div class="cr-field">
+              <span class="cr-label">Name</span>
+              <span class="cr-value">{{ (crDetailData as any).name }}</span>
+            </div>
+            <div class="cr-field">
+              <span class="cr-label">Role</span>
+              <span class="cr-value">{{ (crDetailData as any).role }}</span>
+            </div>
+            <div class="cr-field">
+              <span class="cr-label">Email</span>
+              <span v-if="(crDetailData as any).email" class="cr-value">
+                {{ (crDetailData as any).email }}
+              </span>
+              <span v-else class="cr-value cr-shimmer">loading...</span>
+            </div>
+          </div>
+        </div>
+        <div v-else class="cr-detail empty">
+          Click a contact above — it appears instantly from cache
+        </div>
+      </div>
+      <div ref="crBottomRef"></div>
     </section>
   </div>
 </template>
@@ -628,5 +741,56 @@ function toggleStatus() {
   padding: 8px 12px;
   background: var(--surface-raised);
   border-radius: 6px;
+}
+
+.cr-detail {
+  padding: 10px 14px;
+  background: var(--surface-raised);
+  border-radius: 6px;
+}
+.cr-detail.empty {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.cr-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.cr-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cr-field {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+.cr-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  min-width: 50px;
+}
+.cr-value {
+  font-size: 14px;
+  color: var(--text);
+}
+.cr-shimmer {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 12px;
+  animation: shimmer 1s ease-in-out infinite;
+}
+.cr-timing-log {
+  max-height: 120px;
+  overflow-y: auto;
+}
+@keyframes shimmer {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
 }
 </style>
