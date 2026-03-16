@@ -1126,6 +1126,33 @@ describe("Plugin Integration", () => {
       expect(wrapper.vm.contact).toBeUndefined();
     });
 
+    it("updates when entity arrives after ref was created", async () => {
+      const { pinia } = factory(async () => [{ contactId: "1", name: "Alice" }], ["contacts"], {
+        entities: { contact: defineEntity({ idField: "contactId" }) },
+      });
+
+      await flushPromises();
+
+      // Create a ref to a non-existent entity
+      const wrapper = mount(
+        defineComponent({
+          template: "<div></div>",
+          setup() {
+            return { contact: useEntityRef("contact", "99", pinia) };
+          },
+        }),
+        { global: { plugins: [pinia] } },
+      );
+
+      expect(wrapper.vm.contact).toBeUndefined();
+
+      // Entity arrives later (e.g., via WebSocket push)
+      const entityStore = useEntityStore(pinia);
+      entityStore.set("contact", "99", { contactId: "99", name: "Late Arrival" });
+
+      expect(wrapper.vm.contact?.name).toBe("Late Arrival");
+    });
+
     it("accepts reactive ID and switches entities", async () => {
       const { pinia } = factory(
         async () => [
@@ -1225,6 +1252,39 @@ describe("Plugin Integration", () => {
       // Query should reflect the update (entity store is shared)
       const data = wrapper.vm.data as any[];
       expect(data[0].name).toBe("Alicia");
+    });
+
+    it("respects custom merge functions", async () => {
+      const { pinia } = factory(
+        async () => ({ contactId: "1", name: "Alice", tags: ["friend"] }),
+        ["contacts", "1"],
+        {
+          entities: {
+            contact: defineEntity({
+              idField: "contactId",
+              merge: (existing, incoming) => ({
+                ...existing,
+                ...incoming,
+                tags: [
+                  ...((existing.tags as string[]) || []),
+                  ...((incoming.tags as string[]) || []),
+                ],
+              }),
+            }),
+          },
+        },
+      );
+
+      await flushPromises();
+
+      const entityStore = useEntityStore(pinia);
+      expect(entityStore.get("contact", "1").value?.tags).toEqual(["friend"]);
+
+      // useNormalizeMutation should apply custom merge (append tags, not replace)
+      const normalizeMutation = useNormalizeMutation(pinia);
+      normalizeMutation({ contactId: "1", name: "Alice", tags: ["coworker"] });
+
+      expect(entityStore.get("contact", "1").value?.tags).toEqual(["friend", "coworker"]);
     });
   });
 
@@ -1801,6 +1861,400 @@ describe("Plugin Integration", () => {
       // Non-existent ID — should return undefined
       currentId.value = "999";
       expect(placeholderFn()).toBeUndefined();
+    });
+  });
+
+  // ─────────────────────────────────────────────
+  // Auto-Redirect
+  // ─────────────────────────────────────────────
+
+  describe("autoRedirect", () => {
+    it("auto-injects placeholderData for 2-segment key matching registered entity", async () => {
+      const entityDefs = { contact: defineEntity({ idField: "contactId" }) };
+      const normalizerPlugin = PiniaColadaNormalizer({
+        entities: entityDefs,
+        autoRedirect: true,
+      });
+
+      const pinia = createPinia();
+
+      // Step 1: List query populates entity store
+      mount(
+        defineComponent({
+          template: "<div></div>",
+          setup() {
+            return {
+              ...useQuery({
+                query: () =>
+                  Promise.resolve([
+                    { contactId: "42", name: "Alice", __typename: "contact" },
+                  ]),
+                key: ["contacts"],
+                normalize: true,
+              }),
+            };
+          },
+        }),
+        {
+          global: {
+            plugins: [
+              pinia,
+              [PiniaColada, { plugins: [normalizerPlugin] } satisfies PiniaColadaOptions],
+            ],
+          },
+        },
+      );
+      await flushPromises();
+
+      // Verify entity is in store
+      const store = useEntityStore(pinia);
+      expect(store.has("contact", "42")).toBe(true);
+
+      // Step 2: Detail query with 2-segment key ['contact', '42']
+      // Should auto-inject placeholderData from entity store
+      const detailWrapper = mount(
+        defineComponent({
+          template: "<div></div>",
+          setup() {
+            const result = useQuery({
+              query: () =>
+                new Promise(() => {
+                  /* never resolves — we only care about placeholder */
+                }),
+              key: ["contact", "42"],
+              normalize: true,
+            });
+            return { ...result };
+          },
+        }),
+        {
+          global: {
+            plugins: [
+              pinia,
+              [PiniaColada, { plugins: [normalizerPlugin] } satisfies PiniaColadaOptions],
+            ],
+          },
+        },
+      );
+
+      // The data should show Alice immediately (from placeholderData)
+      // even though the query never resolves
+      const data = detailWrapper.vm.data as any;
+      expect(data).toBeDefined();
+      expect(data.name).toBe("Alice");
+      expect(data.contactId).toBe("42");
+    });
+
+    it("skips redirect for 1-segment keys (list queries)", async () => {
+      const normalizerPlugin = PiniaColadaNormalizer({
+        entities: { contact: defineEntity({ idField: "contactId" }) },
+        autoRedirect: true,
+      });
+      const pinia = createPinia();
+
+      // Populate entity store
+      mount(
+        defineComponent({
+          template: "<div></div>",
+          setup() {
+            return {
+              ...useQuery({
+                query: () =>
+                  Promise.resolve([{ contactId: "42", name: "Alice", __typename: "contact" }]),
+                key: ["contacts-seed"],
+                normalize: true,
+              }),
+            };
+          },
+        }),
+        {
+          global: {
+            plugins: [
+              pinia,
+              [PiniaColada, { plugins: [normalizerPlugin] } satisfies PiniaColadaOptions],
+            ],
+          },
+        },
+      );
+      await flushPromises();
+
+      // 1-segment key — should NOT get placeholder
+      const wrapper = mount(
+        defineComponent({
+          template: "<div></div>",
+          setup() {
+            return {
+              ...useQuery({
+                query: () => new Promise(() => {}),
+                key: ["contact"],
+                normalize: true,
+              }),
+            };
+          },
+        }),
+        {
+          global: {
+            plugins: [
+              pinia,
+              [PiniaColada, { plugins: [normalizerPlugin] } satisfies PiniaColadaOptions],
+            ],
+          },
+        },
+      );
+
+      // Should be undefined — no auto-redirect for single-segment keys
+      expect(wrapper.vm.data).toBeUndefined();
+    });
+
+    it("skips redirect for 3+-segment keys (nested resources)", async () => {
+      const normalizerPlugin = PiniaColadaNormalizer({
+        entities: { contact: defineEntity({ idField: "contactId" }) },
+        autoRedirect: true,
+      });
+      const pinia = createPinia();
+
+      // Populate
+      mount(
+        defineComponent({
+          template: "<div></div>",
+          setup() {
+            return {
+              ...useQuery({
+                query: () =>
+                  Promise.resolve([{ contactId: "42", name: "Alice", __typename: "contact" }]),
+                key: ["contacts-seed2"],
+                normalize: true,
+              }),
+            };
+          },
+        }),
+        {
+          global: {
+            plugins: [
+              pinia,
+              [PiniaColada, { plugins: [normalizerPlugin] } satisfies PiniaColadaOptions],
+            ],
+          },
+        },
+      );
+      await flushPromises();
+
+      // 3-segment key — should NOT get placeholder
+      const wrapper = mount(
+        defineComponent({
+          template: "<div></div>",
+          setup() {
+            return {
+              ...useQuery({
+                query: () => new Promise(() => {}),
+                key: ["contact", "42", "orders"],
+                normalize: true,
+              }),
+            };
+          },
+        }),
+        {
+          global: {
+            plugins: [
+              pinia,
+              [PiniaColada, { plugins: [normalizerPlugin] } satisfies PiniaColadaOptions],
+            ],
+          },
+        },
+      );
+
+      expect(wrapper.vm.data).toBeUndefined();
+    });
+
+    it("respects per-query redirect: false override", async () => {
+      const normalizerPlugin = PiniaColadaNormalizer({
+        entities: { contact: defineEntity({ idField: "contactId" }) },
+        autoRedirect: true,
+      });
+      const pinia = createPinia();
+
+      // Populate
+      mount(
+        defineComponent({
+          template: "<div></div>",
+          setup() {
+            return {
+              ...useQuery({
+                query: () =>
+                  Promise.resolve([{ contactId: "42", name: "Alice", __typename: "contact" }]),
+                key: ["contacts-seed3"],
+                normalize: true,
+              }),
+            };
+          },
+        }),
+        {
+          global: {
+            plugins: [
+              pinia,
+              [PiniaColada, { plugins: [normalizerPlugin] } satisfies PiniaColadaOptions],
+            ],
+          },
+        },
+      );
+      await flushPromises();
+
+      // 2-segment key but redirect: false — should NOT get placeholder
+      const wrapper = mount(
+        defineComponent({
+          template: "<div></div>",
+          setup() {
+            return {
+              ...useQuery({
+                query: () => new Promise(() => {}),
+                key: ["contact", "42"],
+                normalize: true,
+                redirect: false,
+              }),
+            };
+          },
+        }),
+        {
+          global: {
+            plugins: [
+              pinia,
+              [PiniaColada, { plugins: [normalizerPlugin] } satisfies PiniaColadaOptions],
+            ],
+          },
+        },
+      );
+
+      expect(wrapper.vm.data).toBeUndefined();
+    });
+
+    it("supports explicit redirect config for non-standard keys", async () => {
+      const normalizerPlugin = PiniaColadaNormalizer({
+        entities: { contact: defineEntity({ idField: "contactId" }) },
+        // autoRedirect OFF — but per-query redirect config should still work
+      });
+      const pinia = createPinia();
+
+      // Populate
+      mount(
+        defineComponent({
+          template: "<div></div>",
+          setup() {
+            return {
+              ...useQuery({
+                query: () =>
+                  Promise.resolve([{ contactId: "42", name: "Alice", __typename: "contact" }]),
+                key: ["contacts-seed4"],
+                normalize: true,
+              }),
+            };
+          },
+        }),
+        {
+          global: {
+            plugins: [
+              pinia,
+              [PiniaColada, { plugins: [normalizerPlugin] } satisfies PiniaColadaOptions],
+            ],
+          },
+        },
+      );
+      await flushPromises();
+
+      // Non-standard key with explicit redirect config
+      const wrapper = mount(
+        defineComponent({
+          template: "<div></div>",
+          setup() {
+            return {
+              ...useQuery({
+                query: () => new Promise(() => {}),
+                key: ["dashboard-contact", "42"],
+                normalize: true,
+                redirect: { entityType: "contact" },
+              }),
+            };
+          },
+        }),
+        {
+          global: {
+            plugins: [
+              pinia,
+              [PiniaColada, { plugins: [normalizerPlugin] } satisfies PiniaColadaOptions],
+            ],
+          },
+        },
+      );
+
+      const data = wrapper.vm.data as any;
+      expect(data).toBeDefined();
+      expect(data.name).toBe("Alice");
+      expect(data.contactId).toBe("42");
+    });
+
+    it("does not overwrite user-provided placeholderData", async () => {
+      const normalizerPlugin = PiniaColadaNormalizer({
+        entities: { contact: defineEntity({ idField: "contactId" }) },
+        autoRedirect: true,
+      });
+      const pinia = createPinia();
+
+      // Populate entity store
+      mount(
+        defineComponent({
+          template: "<div></div>",
+          setup() {
+            return {
+              ...useQuery({
+                query: () =>
+                  Promise.resolve([
+                    { contactId: "42", name: "Alice", __typename: "contact" },
+                  ]),
+                key: ["contacts-seed5"],
+                normalize: true,
+              }),
+            };
+          },
+        }),
+        {
+          global: {
+            plugins: [
+              pinia,
+              [PiniaColada, { plugins: [normalizerPlugin] } satisfies PiniaColadaOptions],
+            ],
+          },
+        },
+      );
+      await flushPromises();
+
+      // Detail query with BOTH autoRedirect match AND user-provided placeholderData
+      const wrapper = mount(
+        defineComponent({
+          template: "<div></div>",
+          setup() {
+            return {
+              ...useQuery({
+                query: () => new Promise(() => {}),
+                key: ["contact", "42"],
+                normalize: true,
+                placeholderData: () => ({ contactId: "42", name: "User Placeholder" }),
+              }),
+            };
+          },
+        }),
+        {
+          global: {
+            plugins: [
+              pinia,
+              [PiniaColada, { plugins: [normalizerPlugin] } satisfies PiniaColadaOptions],
+            ],
+          },
+        },
+      );
+
+      // User's placeholderData should win, not autoRedirect's cached entity
+      const data = wrapper.vm.data as any;
+      expect(data).toBeDefined();
+      expect(data.name).toBe("User Placeholder");
     });
   });
 });

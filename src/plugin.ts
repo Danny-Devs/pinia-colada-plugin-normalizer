@@ -19,6 +19,7 @@
  */
 
 import { customRef, onScopeDispose, shallowRef } from "vue";
+import { pauseTracking, resetTracking } from "@vue/reactivity";
 import type { PiniaColadaPlugin } from "@pinia/colada";
 import { defineStore, type Pinia } from "pinia";
 import type {
@@ -40,6 +41,38 @@ import { createEntityStore } from "./store";
 function splitEntityKey(key: string): [string, string] {
   const idx = key.indexOf(":");
   return [key.slice(0, idx), key.slice(idx + 1)];
+}
+
+/**
+ * Write extracted entities to the store, respecting custom merge policies.
+ * Entities with a custom merge function are processed individually;
+ * the rest are batched for efficiency.
+ * @internal
+ */
+function writeEntitiesToStore(
+  entities: NormalizationResult["entities"],
+  entityDefs: Record<string, EntityDefinition>,
+  store: EntityStore,
+): void {
+  const customMergeEntities = entities.filter(
+    (e) => entityDefs[e.entityType]?.merge,
+  );
+  const regularEntities = entities.filter(
+    (e) => !entityDefs[e.entityType]?.merge,
+  );
+
+  if (regularEntities.length > 0) {
+    store.setMany(regularEntities);
+  }
+  for (const entity of customMergeEntities) {
+    const mergeFn = entityDefs[entity.entityType].merge!;
+    if (store.has(entity.entityType, entity.id)) {
+      const existing = store.get(entity.entityType, entity.id).value!;
+      store.replace(entity.entityType, entity.id, mergeFn(existing, entity.data));
+    } else {
+      store.set(entity.entityType, entity.id, entity.data);
+    }
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -131,6 +164,7 @@ export function PiniaColadaNormalizer(options: NormalizerPluginOptions = {}): Pi
     defaultIdField = "id",
     store: userStore,
     autoNormalize = false,
+    autoRedirect = false,
   } = options;
 
   const pluginCallback: PiniaColadaPlugin = ({ queryCache, pinia, scope }) => {
@@ -185,6 +219,42 @@ export function PiniaColadaNormalizer(options: NormalizerPluginOptions = {}): Pi
             isNormalized: false,
             entityKeys: new Set<string>(),
           });
+
+          // ── Auto-redirect: serve cached entity as placeholderData ──
+          // If autoRedirect is enabled (or per-query redirect is configured),
+          // check if the query key matches a [entityType, id] pattern and
+          // the entity exists in the store. If so, inject it as placeholderData
+          // for instant display while the real query fetches.
+          const redirectOpt = entry.options?.redirect;
+          if (redirectOpt !== false && entry.state.value.status === "pending") {
+            let redirectEntityType: string | undefined;
+            let redirectId: string | undefined;
+
+            if (redirectOpt && typeof redirectOpt === "object") {
+              // Explicit per-query redirect config
+              redirectEntityType = redirectOpt.entityType;
+              redirectId = redirectOpt.getId
+                ? redirectOpt.getId(entry.key)
+                : entry.key.length >= 2 ? String(entry.key[1]) : undefined;
+            } else if (autoRedirect && entry.key.length === 2 && typeof entry.key[0] === "string") {
+              // Convention-based: [entityType, id] where entityType is registered
+              const candidateType = entry.key[0];
+              if (candidateType in entityDefs) {
+                redirectEntityType = candidateType;
+                redirectId = String(entry.key[1]);
+              }
+            }
+
+            if (redirectEntityType && redirectId
+              && !(entry as any).placeholderData
+              && entityStoreInstance.has(redirectEntityType, redirectId)) {
+              const rawEntity = entityStoreInstance.get(redirectEntityType, redirectId).value;
+              if (rawEntity != null) {
+                // Denormalize to resolve nested EntityRefs before handing to the template
+                (entry as any).placeholderData = denormalize(rawEntity, entityStoreInstance);
+              }
+            }
+          }
 
           // Check if this query should be normalized
           const shouldNormalize = entry.options?.normalize ?? autoNormalize;
@@ -266,9 +336,28 @@ export function PiniaColadaNormalizer(options: NormalizerPluginOptions = {}): Pi
             return {
               get(): State {
                 track();
-                // Denormalize on read: replace EntityRefs with live store data
+                // Denormalize on read: replace EntityRefs with live store data.
+                //
+                // pauseTracking() prevents denormalize's ShallowRef reads from
+                // leaking into the component's reactive scope. Without this,
+                // each entity read during denormalize creates a direct dependency
+                // from the component to that entity's ShallowRef — redundant
+                // because the subscriber mechanism (above) already handles
+                // triggering re-reads via triggerCustomRef(). The leaked deps
+                // cause double-firing on entity updates.
+                //
+                // This pattern matches Pinia's internal use of pauseTracking
+                // from @vue/reactivity. Note: this is an internal Vue API with
+                // no semver stability guarantee, but is stable in practice and
+                // used by Pinia, VueUse, and Vue core itself.
                 if (rawState.status === "success" && rawState.data != null) {
-                  const data = denormalize(rawState.data, entityStoreInstance, denormCache);
+                  pauseTracking();
+                  let data: unknown;
+                  try {
+                    data = denormalize(rawState.data, entityStoreInstance, denormCache);
+                  } finally {
+                    resetTracking();
+                  }
                   // Structural sharing: return the same state object if data hasn't changed
                   if (data === cachedData && cachedState != null) {
                     return cachedState;
@@ -302,35 +391,7 @@ export function PiniaColadaNormalizer(options: NormalizerPluginOptions = {}): Pi
                     return;
                   }
                   if (result.entities.length > 0) {
-                    // Write entities to the store, respecting custom merge policies.
-                    // Entities with a custom merge function are processed individually;
-                    // the rest are batched for efficiency.
-                    const customMergeEntities = result.entities.filter(
-                      (e) => entityDefs[e.entityType]?.merge,
-                    );
-                    const regularEntities = result.entities.filter(
-                      (e) => !entityDefs[e.entityType]?.merge,
-                    );
-
-                    if (regularEntities.length > 0) {
-                      entityStoreInstance.setMany(regularEntities);
-                    }
-                    for (const entity of customMergeEntities) {
-                      const mergeFn = entityDefs[entity.entityType].merge!;
-                      if (entityStoreInstance.has(entity.entityType, entity.id)) {
-                        const existing = entityStoreInstance.get(
-                          entity.entityType,
-                          entity.id,
-                        ).value!;
-                        entityStoreInstance.replace(
-                          entity.entityType,
-                          entity.id,
-                          mergeFn(existing, entity.data),
-                        );
-                      } else {
-                        entityStoreInstance.set(entity.entityType, entity.id, entity.data);
-                      }
-                    }
+                    writeEntitiesToStore(result.entities, entityDefs, entityStoreInstance);
 
                     // GC lifecycle: retain new keys FIRST, then release old ones.
                     // This order prevents a transient zero-refcount window for
@@ -578,7 +639,7 @@ export function useNormalizeMutation(pinia?: Pinia): (data: unknown) => void {
   return (data: unknown) => {
     const result = normalize(data, entityDefs, defaultIdField);
     if (result.entities.length > 0) {
-      entityStoreInstance.setMany(result.entities);
+      writeEntitiesToStore(result.entities, entityDefs, entityStoreInstance);
     }
   };
 }
