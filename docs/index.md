@@ -72,3 +72,4 @@ With normalization, contact 5 is stored once. Both queries read from the same en
 | `defaultIdField` | `string` | `'id'` | Default ID field for auto-detection |
 | `store` | `EntityStore` | in-memory | Custom storage backend |
 | `autoNormalize` | `boolean` | `false` | Normalize all queries by default |
+| `autoRedirect` | `boolean` | `false` | Auto-serve cached entities as placeholder data for `[entityType, id]` keys |
