@@ -9,7 +9,7 @@ export default defineConfig({
   },
   deps: {
     onlyBundle: [],
-    neverBundle: ["vue", "pinia", "@pinia/colada", "@vue/devtools-api"],
+    neverBundle: ["vue", "pinia", "@pinia/colada", "@vue/devtools-api", "@vue/reactivity", "@vue/shared"],
   },
   target: "esnext",
   clean: true,
