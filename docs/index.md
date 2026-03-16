@@ -1,8 +1,26 @@
 # Getting Started
 
-Normalized entity caching plugin for [Pinia Colada](https://github.com/posva/pinia-colada). Store each entity once — update it in one place and every query sees the change. No more stale data from missed cache invalidations.
+Normalized entity caching plugin for [Pinia Colada](https://github.com/posva/pinia-colada). Store each entity **once** — update it in one place and every query sees the change. No more stale data from missed cache invalidations.
 
 > [Live Playground](https://pinia-colada-plugin-normalizer.vercel.app)
+
+## The Problem
+
+Pinia Colada stores data per query key. When the same entity appears in multiple queries, it lives as independent copies that can diverge:
+
+```typescript
+const { data: contacts } = useQuery({ key: ["contacts"], query: fetchContacts });
+const { data: contact } = useQuery({ key: ["contacts", 5], query: () => fetchContact(5) });
+
+// A mutation updates contact 5's name.
+// Only one cache entry gets the update. The other is stale.
+```
+
+## The Solution
+
+With normalization, contact 5 is stored **once** in a flat entity store. Both queries read from the same entity. One write, all views update — no cache invalidation, no refetching.
+
+This plugin uses Vue's `customRef` to transparently intercept reads and writes on Pinia Colada's query state. Your app code doesn't know normalization exists.
 
 ## Installation
 
@@ -12,9 +30,9 @@ pnpm add pinia-colada-plugin-normalizer
 
 Requires `@pinia/colada` >= 1.0.0, `pinia` >= 2.1.0, `vue` >= 3.3.0.
 
-## Setup
+## Quick Start
 
-Register the plugin with Pinia Colada:
+### 1. Register the plugin
 
 ```typescript
 import { PiniaColada } from "@pinia/colada";
@@ -32,9 +50,7 @@ app.use(PiniaColada, {
 });
 ```
 
-## Basic Usage
-
-Opt in per query with `normalize: true`:
+### 2. Opt in per query
 
 ```typescript
 const { data } = useQuery({
@@ -44,32 +60,41 @@ const { data } = useQuery({
 });
 ```
 
-Or enable globally with `autoNormalize: true` in the plugin options:
+Or enable globally with `autoNormalize: true`:
 
 ```typescript
 PiniaColadaNormalizer({ autoNormalize: true });
 ```
 
-## The Problem
+### 3. Write directly to the entity store
 
-Pinia Colada stores data per query key. When the same entity appears in multiple queries, it lives as independent copies that can diverge:
+No invalidation needed — Vue reactivity propagates to all queries:
 
 ```typescript
-const { data: contacts } = useQuery({ key: ["contacts"], query: fetchContacts });
-const { data: contact } = useQuery({ key: ["contacts", 5], query: () => fetchContact(5) });
+import { useEntityStore } from "pinia-colada-plugin-normalizer";
 
-// A mutation updates contact 5's name.
-// Only one cache entry gets the update. The other is stale.
+const entityStore = useEntityStore();
+
+// From a WebSocket event:
+ws.on("CONTACT_UPDATED", (data) => {
+  entityStore.set("contact", data.contactId, data);
+});
 ```
-
-With normalization, contact 5 is stored once. Both queries read from the same entity. One write, all views update.
 
 ## Plugin Options
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `entities` | `Record<string, EntityDefinition>` | `{}` | Entity type configurations |
-| `defaultIdField` | `string` | `'id'` | Default ID field for auto-detection |
-| `store` | `EntityStore` | in-memory | Custom storage backend |
+| `entities` | `Record<string, EntityDefinition>` | `{}` | Entity type configurations via `defineEntity()` |
+| `defaultIdField` | `string` | `'id'` | Default ID field for convention-based auto-detection |
+| `store` | `EntityStore` | in-memory | Custom storage backend (IndexedDB, SQLite, etc.) |
 | `autoNormalize` | `boolean` | `false` | Normalize all queries by default |
 | `autoRedirect` | `boolean` | `false` | Auto-serve cached entities as placeholder data for `[entityType, id]` keys |
+
+## What's Next
+
+- [Entity Definitions](/entity-definitions) — configuring `defineEntity`, type safety via `EntityRegistry`
+- [Real-Time Patterns](/real-time) — WebSocket hooks, optimistic updates, coalescing
+- [Cache Redirects](/cache-redirects) — zero-spinner navigation with `autoRedirect` and `useCachedEntity`
+- [How It Works](/architecture) — customRef internals, entity store, GC, SSR
+- [API Reference](/api-reference) — complete list of exports, options, and types
