@@ -1,6 +1,25 @@
 # Changelog
 
-## 0.1.4 (unreleased)
+## 0.1.5 (2026-03-15)
+
+### Features
+- **`autoRedirect`** — Convention-based cache redirects via `[entityType, id]` query key pattern. One flag in plugin options (`autoRedirect: true`) gives detail queries instant placeholderData from prior list fetches. Per-query overrides via `redirect: false` or `redirect: { entityType, getId }`.
+- **`useCachedEntity(type, id)`** — Composable returning a `placeholderData`-compatible getter for manual cache redirect injection. Fully denormalizes nested EntityRefs before returning.
+- **Playground: cache redirects demo** — 5th feature card in the interactive playground demonstrating zero-spinner list-to-detail navigation.
+
+### Performance
+- **`pauseTracking`/`resetTracking`** in customRef getter — Prevents leaked reactive dependencies from `store.get()` reads during denormalization. Without this, each entity read would create a direct component dependency on the entity's ShallowRef, causing double-firing. Uses `@vue/reactivity` internals (same pattern as Pinia core).
+
+### Bug Fixes
+- Externalize `@vue/reactivity` and `@vue/shared` in build config — prevents bundling Vue internals into the dist output.
+
+### Docs
+- npm badges (version, downloads, license) and direct npm/GitHub links in README header.
+
+### Tests
+- 123 → 131 tests (+8)
+
+## 0.1.4 (2026-03-15)
 
 ### Features
 - **`useEntityRef(type, id)`** — Reactive computed ref to a single entity. Accepts `MaybeRefOrGetter<string>` for reactive IDs (e.g., `useEntityRef('contact', () => route.params.id)`). No GC tracking — immune to garbage collection.
