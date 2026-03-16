@@ -96,5 +96,6 @@ ws.on("CONTACT_UPDATED", (data) => {
 - [Entity Definitions](./entity-definitions) — configuring `defineEntity`, type safety via `EntityRegistry`
 - [Real-Time Patterns](./real-time) — WebSocket hooks, optimistic updates, coalescing
 - [Cache Redirects](./cache-redirects) — zero-spinner navigation with `autoRedirect` and `useCachedEntity`
+- [Persistence](./persistence) — save entities to IndexedDB, survive page refreshes
 - [How It Works](./architecture) — customRef internals, entity store, GC, SSR
 - [API Reference](./api-reference) — complete list of exports, options, and types

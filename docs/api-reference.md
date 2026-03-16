@@ -72,6 +72,38 @@ import { createEntityStore } from "pinia-colada-plugin-normalizer";
 const store = createEntityStore();
 ```
 
+## Persistence
+
+### `enablePersistence(store, options?)`
+
+Enable IndexedDB persistence for an entity store. See the [Persistence guide](/persistence) for details.
+
+```typescript
+import { enablePersistence } from "pinia-colada-plugin-normalizer";
+
+const { ready, flush, dispose } = enablePersistence(entityStore, {
+  dbName: "my-app",
+});
+await ready;
+```
+
+**Options** (`PersistenceOptions`):
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `dbName` | `string` | `'pcn_entities'` | IndexedDB database name |
+| `writeDebounce` | `number` | `100` | Debounce interval (ms) for batching writes |
+| `onReady` | `() => void` | -- | Called when hydration from IDB completes |
+| `onError` | `(error: unknown) => void` | -- | Called when persistence degrades |
+
+**Returns** (`PersistenceHandle`):
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `ready` | `Promise<void>` | Resolves when hydration is complete |
+| `flush()` | `Promise<void>` | Force-flush pending writes to IDB |
+| `dispose()` | `void` | Unsubscribe and clean up |
+
 ## Entity Store Interface
 
 The `EntityStore` interface. All methods are available on the object returned by `useEntityStore()`.
@@ -106,6 +138,7 @@ The `EntityStore` interface. All methods are available on the object returned by
 | --- | --- | --- |
 | `retain` | `(type: string, id: string) => void` | Increment refcount (called by plugin on normalize) |
 | `release` | `(type: string, id: string) => void` | Decrement refcount (called by plugin on remove/renormalize) |
+| `getRefCount` | `(type: string, id: string) => number \| undefined` | Current refcount. `undefined` if never retained (immune to GC). |
 | `gc` | `() => string[]` | Collect entities with refcount <= 0. Returns removed keys. |
 
 ### Lifecycle
@@ -302,6 +335,8 @@ Added to `UseQueryOptions` via module augmentation:
 | `NormalizerPluginOptions` | Plugin options |
 | `NormalizerQueryOptions` | Per-query options (`normalize`, `redirect`) |
 | `OptimisticTransaction` | Transaction interface for optimistic updates |
+| `PersistenceOptions` | Options for `enablePersistence()` |
+| `PersistenceHandle` | Return type of `enablePersistence()` (`ready`, `flush`, `dispose`) |
 
 ## Deprecated
 

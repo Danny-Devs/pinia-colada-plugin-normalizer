@@ -22,6 +22,7 @@ export default defineConfig({
           { text: "Entity Definitions", link: "/entity-definitions" },
           { text: "Real-Time Patterns", link: "/real-time" },
           { text: "Cache Redirects", link: "/cache-redirects" },
+          { text: "Persistence", link: "/persistence" },
           { text: "How It Works", link: "/architecture" },
         ],
       },
