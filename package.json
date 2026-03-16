@@ -1,6 +1,6 @@
 {
   "name": "pinia-colada-plugin-normalizer",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Normalized entity caching plugin for Pinia Colada",
   "keywords": [
     "cache",
