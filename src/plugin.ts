@@ -196,7 +196,7 @@ export function PiniaColadaNormalizer(options: NormalizerPluginOptions = {}): Pi
       const app = (pinia as any)._a;
       if (app) {
         import("./devtools").then(({ setupDevtools }) => {
-          setupDevtools(app, entityStoreInstance);
+          setupDevtools(app, entityStoreInstance, queryCache);
         });
       }
     }

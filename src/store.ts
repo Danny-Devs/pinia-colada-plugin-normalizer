@@ -353,6 +353,11 @@ export function createEntityStore(): EntityStore {
       };
     },
 
+    getRefCount(entityType, id) {
+      const key = toEntityKey(entityType, id);
+      return refCounts.get(key);
+    },
+
     retain(entityType, id) {
       const key = toEntityKey(entityType, id);
       refCounts.set(key, (refCounts.get(key) ?? 0) + 1);
