@@ -38,6 +38,14 @@ export { useEntityRef, useEntityQuery, createEntityIndex } from "./composables";
 // Composables (Phase 4: Cache Redirects)
 export { useCachedEntity } from "./composables";
 
+// Persistence (Phase 4: IndexedDB)
+export { enablePersistence } from "./persist";
+export type { PersistenceOptions, PersistenceHandle } from "./persist";
+
+// Pagination Helpers
+export { cursorPagination, offsetPagination } from "./pagination";
+export type { CursorPaginationOptions, OffsetPaginationOptions } from "./pagination";
+
 // Types & Helpers
 export { defineEntity } from "./types";
 export type {

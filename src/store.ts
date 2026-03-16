@@ -25,10 +25,11 @@ const ENTITY_REF_JSON_KEY = "__pcn_ref";
 
 /**
  * Walk data and replace EntityRef objects (Symbol-marked) with a JSON-safe
- * wire format. Used by toJSON() to produce serializable snapshots.
+ * wire format. Used by toJSON() and persistence adapters.
+ * Symbols don't survive JSON.stringify or IndexedDB structured clone.
  * @internal
  */
-function encodeEntityRefs(data: unknown): unknown {
+export function encodeEntityRefs(data: unknown): unknown {
   if (data == null || typeof data !== "object") return data;
 
   if (Array.isArray(data)) {
@@ -59,10 +60,10 @@ function encodeEntityRefs(data: unknown): unknown {
 
 /**
  * Walk data and replace wire-format EntityRefs with Symbol-marked EntityRef
- * objects. Used by hydrate() to restore the in-memory representation.
+ * objects. Used by hydrate() and persistence adapters.
  * @internal
  */
-function decodeEntityRefs(data: unknown): unknown {
+export function decodeEntityRefs(data: unknown): unknown {
   if (data == null || typeof data !== "object") return data;
 
   if (Array.isArray(data)) {
@@ -351,6 +352,11 @@ export function createEntityStore(): EntityStore {
       return () => {
         listeners.delete(entry);
       };
+    },
+
+    getRefCount(entityType, id) {
+      const key = toEntityKey(entityType, id);
+      return refCounts.get(key);
     },
 
     retain(entityType, id) {

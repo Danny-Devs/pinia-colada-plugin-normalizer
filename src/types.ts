@@ -207,6 +207,15 @@ export interface EntityStore {
   release(entityType: string, id: string): void;
 
   /**
+   * Get the current reference count for an entity.
+   * Returns `undefined` if the entity has never been `retain()`ed
+   * (i.e., created via direct `set()` — immune to GC).
+   *
+   * Useful for devtools and debugging GC behavior.
+   */
+  getRefCount(entityType: string, id: string): number | undefined;
+
+  /**
    * Remove entities with zero or negative reference counts.
    * Only affects entities that have been `retain()`ed at least once —
    * entities created via direct `set()` (never retained) are untouched.
