@@ -10,6 +10,12 @@ export default defineConfig(() => ({
       "pinia-colada-plugin-normalizer": fileURLToPath(
         new URL("../src/index.ts", import.meta.url),
       ),
+      // The plugin source lives outside playground/, so its imports
+      // (like @vue/reactivity) can't resolve from playground/node_modules
+      // under pnpm's strict resolution. Alias to the playground's copy.
+      "@vue/reactivity": fileURLToPath(
+        new URL("./node_modules/@vue/reactivity", import.meta.url),
+      ),
     },
   },
 }));
