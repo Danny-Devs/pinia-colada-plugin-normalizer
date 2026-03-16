@@ -1,4 +1,4 @@
-import { createApp } from "vue";
+import { createApp, ref } from "vue";
 import { createPinia } from "pinia";
 import { PiniaColada } from "@pinia/colada";
 import {
@@ -26,14 +26,21 @@ app.use(PiniaColada, {
 
 // Enable IndexedDB persistence — entities survive page refresh
 const entityStore = useEntityStore(pinia);
+
+// Track how many entities were restored from IDB for the demo UI
+const restoredCount = ref(0);
+const countBefore = entityStore.getEntriesByType("contact").length;
+
 const persistence = enablePersistence(entityStore, {
   dbName: "pcn_playground",
-  onReady: () => console.log("[playground] Entity cache restored from IndexedDB"),
+  onReady: () => {
+    restoredCount.value = entityStore.getEntriesByType("contact").length - countBefore;
+  },
   onError: (err) => console.warn("[playground] Persistence unavailable:", err),
 });
 
-// Expose for the App component to show persistence status
 app.provide("persistence", persistence);
+app.provide("restoredCount", restoredCount);
 
 persistence.ready.then(() => {
   app.mount("#app");

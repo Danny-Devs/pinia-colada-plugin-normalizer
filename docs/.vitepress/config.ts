@@ -9,6 +9,10 @@ export default defineConfig({
       { text: "Guide", link: "/" },
       { text: "API Reference", link: "/api-reference" },
       {
+        text: "Playground",
+        link: "https://pinia-colada-plugin-normalizer.vercel.app",
+      },
+      {
         text: "GitHub",
         link: "https://github.com/Danny-Devs/pinia-colada-plugin-normalizer",
       },

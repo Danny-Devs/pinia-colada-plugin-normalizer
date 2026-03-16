@@ -1,7 +1,5 @@
 <script setup lang="ts">
-import { inject } from "vue";
 import { useColorMode } from "@vueuse/core";
-import type { PersistenceHandle } from "pinia-colada-plugin-normalizer";
 
 defineProps<{
   currentPage: string;
@@ -12,8 +10,6 @@ const emit = defineEmits<{
 }>();
 
 const colorMode = useColorMode({ attribute: "data-theme" });
-// App awaits ready before mounting, so persistence is always active when this renders
-const persistence = inject<PersistenceHandle>("persistence");
 
 function toggleTheme() {
   colorMode.value = colorMode.value === "dark" ? "light" : "dark";
@@ -46,9 +42,15 @@ function toggleTheme() {
       </nav>
     </div>
     <div class="header-right">
-      <span v-if="persistence" class="persistence-badge" title="Entities persist to IndexedDB — try refreshing the page!">
-        💾 IDB
-      </span>
+      <a
+        href="https://pinia-colada-plugin-normalizer-docs.vercel.app"
+        target="_blank"
+        rel="noopener"
+        class="docs-link"
+        title="Documentation"
+      >
+        Docs
+      </a>
       <a
         href="https://github.com/Danny-Devs/pinia-colada-plugin-normalizer"
         target="_blank"
@@ -143,13 +145,14 @@ function toggleTheme() {
   font-size: 14px;
 }
 
-.persistence-badge {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 4px;
-  background: var(--success-bg);
-  color: var(--success);
-  cursor: default;
+.docs-link {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.docs-link:hover {
+  color: var(--accent);
 }
 </style>
