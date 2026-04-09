@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.7 (2026-03-16)
+
+No user-facing changes. Playground simplification only:
+
+- Removed IDB persistence setup from the playground demo landing page (moved to a dedicated persistence demo) to reduce Vercel build complexity.
+- Docs site configuration tweaks.
+
+Plugin source is byte-identical to 0.1.6. Safe to skip this release if you are on 0.1.6.
+
 ## 0.1.6 (2026-03-15)
 
 ### Features
