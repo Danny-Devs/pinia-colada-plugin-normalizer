@@ -3,3 +3,7 @@ dist/
 *.tsbuildinfo
 .tsc-types/
 .vercel
+
+# VitePress build output
+docs/.vitepress/cache/
+docs/.vitepress/dist/

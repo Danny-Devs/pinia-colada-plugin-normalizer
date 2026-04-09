@@ -1,0 +1,12 @@
+# Generated code — not source
+dist/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+playground/dist/
+playground/node_modules/
+
+# Dependencies
+node_modules/
+
+# Editor / OS
+.vercel/
