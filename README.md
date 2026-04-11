@@ -21,7 +21,7 @@ Store each entity **once**. Update it in one place, every query sees the change.
 pnpm add pinia-colada-plugin-normalizer
 ```
 
-Requires `@pinia/colada` >= 1.0.0, `pinia` >= 2.1.0, `vue` >= 3.3.0.
+Requires `@pinia/colada` >= 1.0.0, `vue` >= 3.3.0. Supports **Pinia 2** (^2.2.6) and **Pinia 3** (^3.0.0) — tested on both, 157 tests passing.
 
 ## Quick Start
 
