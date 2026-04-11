@@ -15,6 +15,24 @@ Store each entity **once**. Update it in one place, every query sees the change.
 - **Type-safe** — optional `EntityRegistry` for end-to-end typed entity access across the entire API.
 - **Extensible** — swappable `EntityStore` interface for custom backends (IndexedDB, SQLite+WASM).
 
+## Why Vue Changes Everything
+
+Most data-fetching libraries (TanStack Query, SWR, Apollo) store query results as isolated cache blobs. When the same entity appears in multiple queries, it exists as independent copies that can silently diverge. Keeping them in sync requires manual invalidation — and you always miss one.
+
+Normalization solves this by storing each entity **once** and letting every query reference the same source. But in React, you still need a custom subscription system to propagate changes (which is why TanStack DB needs `useLiveQuery`, and Apollo needs its own reactivity layer).
+
+**Vue doesn't need any of that.** Vue's fine-grained reactivity tracks dependencies at the individual `ShallowRef` level. When our plugin denormalizes a query result, Vue automatically knows which entities that component depends on. Update one entity → Vue propagates to every component that read it. No subscriptions, no query engine, no bookkeeping.
+
+```
+entityStore.set('contact', '5', updated)
+  → ShallowRef triggers (one entity, one write)
+  → Vue propagates to ALL queries referencing contact#5
+  → Every component re-renders with fresh data
+  → Zero manual invalidation
+```
+
+This is the architectural advantage of building a normalizer on Vue instead of React: **Vue's reactivity system IS the live query engine.**
+
 ## Installation
 
 ```bash
@@ -74,7 +92,7 @@ Without the registry, everything defaults to `EntityRecord` — fully backwards 
 
 ## The Problem
 
-Pinia Colada stores data per query key. When the same entity appears in multiple queries, it lives as independent copies that can diverge:
+Pinia Colada (like TanStack Query) stores data per query key. When the same entity appears in multiple queries, it lives as independent copies that can diverge:
 
 ```typescript
 const { data: contacts } = useQuery({ key: ["contacts"], query: fetchContacts });
@@ -82,9 +100,17 @@ const { data: contact } = useQuery({ key: ["contacts", 5], query: () => fetchCon
 
 // A mutation updates contact 5's name.
 // Only one cache entry gets the update. The other is stale.
+// You must manually invalidate every query that might contain contact 5.
 ```
 
-With normalization, contact 5 is stored once. Both queries read from the same entity. One write, all views update.
+With normalization, contact 5 is stored **once**. Both queries reference the same reactive source. One write → all views update → zero manual invalidation:
+
+```typescript
+// WebSocket event, mutation callback, or any other source:
+entityStore.set("contact", "5", { contactId: "5", name: "Alicia" });
+// Every query referencing contact 5 updates automatically.
+// No invalidateQueries(). No "which keys contain this entity?" bookkeeping.
+```
 
 ## Entity Store Writes
 
