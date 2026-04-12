@@ -17,7 +17,8 @@ import {
   useEntityStore,
   defineEntity,
 } from "./index";
-import { cursorPagination, offsetPagination } from "./pagination";
+import { cursorPagination, offsetPagination, relayPagination } from "./pagination";
+import type { RelayConnection, RelayPageInfo } from "./pagination";
 import type { EntityRecord } from "./types";
 
 // ─────────────────────────────────────────────
@@ -305,6 +306,348 @@ describe("offsetPagination", () => {
   });
 });
 
+describe("relayPagination", () => {
+  interface UserNode extends EntityRecord {
+    id: string;
+    name: string;
+  }
+
+  interface UsersConnection extends EntityRecord {
+    connectionId: string;
+    edges: Array<{ node: UserNode; cursor: string }>;
+    pageInfo: RelayPageInfo;
+  }
+
+  const makeConnection = (
+    id: string,
+    edges: Array<{ node: UserNode; cursor: string }>,
+    pageInfo: Partial<RelayPageInfo> = {},
+  ): UsersConnection => ({
+    connectionId: id,
+    edges,
+    pageInfo: {
+      hasNextPage: false,
+      hasPreviousPage: false,
+      startCursor: edges[0]?.cursor ?? null,
+      endCursor: edges[edges.length - 1]?.cursor ?? null,
+      ...pageInfo,
+    },
+  });
+
+  it("appends edges in forward direction", () => {
+    const merge = relayPagination<UsersConnection>();
+
+    const existing = makeConnection(
+      "users",
+      [
+        { node: { id: "1", name: "Alice" }, cursor: "c1" },
+        { node: { id: "2", name: "Bob" }, cursor: "c2" },
+      ],
+      { hasNextPage: true, hasPreviousPage: false },
+    );
+
+    const incoming = makeConnection(
+      "users",
+      [
+        { node: { id: "3", name: "Charlie" }, cursor: "c3" },
+        { node: { id: "4", name: "Diana" }, cursor: "c4" },
+      ],
+      { hasNextPage: false, hasPreviousPage: true },
+    );
+
+    const result = merge(existing, incoming);
+    expect(result.edges).toHaveLength(4);
+    expect(result.edges[0].node.name).toBe("Alice");
+    expect(result.edges[1].node.name).toBe("Bob");
+    expect(result.edges[2].node.name).toBe("Charlie");
+    expect(result.edges[3].node.name).toBe("Diana");
+  });
+
+  it("prepends edges in backward direction", () => {
+    const merge = relayPagination<UsersConnection>({ direction: "backward" });
+
+    const existing = makeConnection(
+      "users",
+      [
+        { node: { id: "3", name: "Charlie" }, cursor: "c3" },
+        { node: { id: "4", name: "Diana" }, cursor: "c4" },
+      ],
+      { hasNextPage: false, hasPreviousPage: true },
+    );
+
+    const incoming = makeConnection(
+      "users",
+      [
+        { node: { id: "1", name: "Alice" }, cursor: "c1" },
+        { node: { id: "2", name: "Bob" }, cursor: "c2" },
+      ],
+      { hasNextPage: true, hasPreviousPage: false },
+    );
+
+    const result = merge(existing, incoming);
+    expect(result.edges).toHaveLength(4);
+    expect(result.edges[0].node.name).toBe("Alice");
+    expect(result.edges[1].node.name).toBe("Bob");
+    expect(result.edges[2].node.name).toBe("Charlie");
+    expect(result.edges[3].node.name).toBe("Diana");
+  });
+
+  it("stitches pageInfo correctly in forward direction", () => {
+    const merge = relayPagination<UsersConnection>();
+
+    const existing = makeConnection(
+      "users",
+      [{ node: { id: "1", name: "Alice" }, cursor: "c1" }],
+      { hasNextPage: true, hasPreviousPage: false, startCursor: "c1", endCursor: "c1" },
+    );
+
+    const incoming = makeConnection(
+      "users",
+      [{ node: { id: "2", name: "Bob" }, cursor: "c2" }],
+      { hasNextPage: false, hasPreviousPage: true, startCursor: "c2", endCursor: "c2" },
+    );
+
+    const result = merge(existing, incoming);
+    // Forward: keep existing start, take incoming end
+    expect(result.pageInfo.startCursor).toBe("c1");
+    expect(result.pageInfo.endCursor).toBe("c2");
+    // Forward: keep existing hasPreviousPage, take incoming hasNextPage
+    expect(result.pageInfo.hasPreviousPage).toBe(false);
+    expect(result.pageInfo.hasNextPage).toBe(false);
+  });
+
+  it("stitches pageInfo correctly in backward direction", () => {
+    const merge = relayPagination<UsersConnection>({ direction: "backward" });
+
+    const existing = makeConnection(
+      "users",
+      [{ node: { id: "2", name: "Bob" }, cursor: "c2" }],
+      { hasNextPage: false, hasPreviousPage: true, startCursor: "c2", endCursor: "c2" },
+    );
+
+    const incoming = makeConnection(
+      "users",
+      [{ node: { id: "1", name: "Alice" }, cursor: "c1" }],
+      { hasNextPage: true, hasPreviousPage: false, startCursor: "c1", endCursor: "c1" },
+    );
+
+    const result = merge(existing, incoming);
+    // Backward: take incoming start, keep existing end
+    expect(result.pageInfo.startCursor).toBe("c1");
+    expect(result.pageInfo.endCursor).toBe("c2");
+    // Backward: take incoming hasPreviousPage, keep existing hasNextPage
+    expect(result.pageInfo.hasPreviousPage).toBe(false);
+    expect(result.pageInfo.hasNextPage).toBe(false);
+  });
+
+  it("deduplicates edges by cursor (newer wins)", () => {
+    const merge = relayPagination<UsersConnection>();
+
+    const existing = makeConnection(
+      "users",
+      [
+        { node: { id: "1", name: "Alice" }, cursor: "c1" },
+        { node: { id: "2", name: "Bob" }, cursor: "c2" },
+      ],
+      { hasNextPage: true },
+    );
+
+    // Overlapping page — cursor "c2" appears in both
+    const incoming = makeConnection(
+      "users",
+      [
+        { node: { id: "2", name: "Bob Updated" }, cursor: "c2" },
+        { node: { id: "3", name: "Charlie" }, cursor: "c3" },
+      ],
+      { hasNextPage: false },
+    );
+
+    const result = merge(existing, incoming);
+    expect(result.edges).toHaveLength(3);
+    // The newer version of cursor "c2" should win
+    const c2Edge = result.edges.find((e: any) => e.cursor === "c2")!;
+    expect(c2Edge.node.name).toBe("Bob Updated");
+  });
+
+  it("skips dedup when dedupeByCursor is false", () => {
+    const merge = relayPagination<UsersConnection>({ dedupeByCursor: false });
+
+    const existing = makeConnection(
+      "users",
+      [{ node: { id: "1", name: "Alice" }, cursor: "c1" }],
+      { hasNextPage: true },
+    );
+
+    const incoming = makeConnection(
+      "users",
+      [{ node: { id: "1", name: "Alice Refreshed" }, cursor: "c1" }],
+      { hasNextPage: false },
+    );
+
+    const result = merge(existing, incoming);
+    // Both edges kept (duplicate cursors)
+    expect(result.edges).toHaveLength(2);
+  });
+
+  it("returns incoming as-is when existing has no edges (first page)", () => {
+    const merge = relayPagination<UsersConnection>();
+
+    const existing = makeConnection("users", [], { hasNextPage: false });
+    const incoming = makeConnection(
+      "users",
+      [{ node: { id: "1", name: "Alice" }, cursor: "c1" }],
+      { hasNextPage: true },
+    );
+
+    const result = merge(existing, incoming);
+    expect(result.edges).toHaveLength(1);
+    expect(result.edges[0].node.name).toBe("Alice");
+    expect(result.pageInfo.hasNextPage).toBe(true);
+  });
+
+  it("preserves existing edges when incoming is empty (end of list)", () => {
+    const merge = relayPagination<UsersConnection>();
+
+    const existing = makeConnection(
+      "users",
+      [{ node: { id: "1", name: "Alice" }, cursor: "c1" }],
+      { hasNextPage: true },
+    );
+
+    const incoming = makeConnection("users", [], {
+      hasNextPage: false,
+    });
+
+    const result = merge(existing, incoming);
+    expect(result.edges).toHaveLength(1);
+    expect(result.edges[0].node.name).toBe("Alice");
+    // pageInfo updated from incoming (no more pages)
+    expect(result.pageInfo.hasNextPage).toBe(false);
+  });
+
+  it("works with custom field names", () => {
+    const merge = relayPagination({
+      edgesField: "results",
+      pageInfoField: "paging",
+    });
+
+    const existing = {
+      id: "search",
+      results: [{ node: { id: "1" }, cursor: "a" }],
+      paging: { hasNextPage: true, hasPreviousPage: false, startCursor: "a", endCursor: "a" },
+    };
+
+    const incoming = {
+      id: "search",
+      results: [{ node: { id: "2" }, cursor: "b" }],
+      paging: { hasNextPage: false, hasPreviousPage: true, startCursor: "b", endCursor: "b" },
+    };
+
+    const result = merge(existing, incoming);
+    expect((result.results as any[]).length).toBe(2);
+    expect((result.paging as RelayPageInfo).endCursor).toBe("b");
+    expect((result.paging as RelayPageInfo).startCursor).toBe("a");
+  });
+
+  it("handles edges without cursor field gracefully (no dedup)", () => {
+    const merge = relayPagination();
+
+    const existing = {
+      id: "feed",
+      edges: [{ node: { id: "1" } }],
+      pageInfo: { hasNextPage: true, hasPreviousPage: false, startCursor: null, endCursor: null },
+    };
+
+    const incoming = {
+      id: "feed",
+      edges: [{ node: { id: "2" } }],
+      pageInfo: { hasNextPage: false, hasPreviousPage: true, startCursor: null, endCursor: null },
+    };
+
+    const result = merge(existing, incoming);
+    // No cursor → no dedup → both edges kept
+    expect((result.edges as any[]).length).toBe(2);
+    // Null cursors propagate correctly through pageInfo stitching
+    expect((result.pageInfo as RelayPageInfo).startCursor).toBeNull();
+    expect((result.pageInfo as RelayPageInfo).endCursor).toBeNull();
+  });
+
+  it("deduplicates correctly on full page refresh (identical edges)", () => {
+    const merge = relayPagination<UsersConnection>();
+
+    const existing = makeConnection(
+      "users",
+      [
+        { node: { id: "1", name: "Alice" }, cursor: "c1" },
+        { node: { id: "2", name: "Bob" }, cursor: "c2" },
+      ],
+      { hasNextPage: true, hasPreviousPage: false },
+    );
+
+    // Same page refetched (stale-while-revalidate)
+    const incoming = makeConnection(
+      "users",
+      [
+        { node: { id: "1", name: "Alice Fresh" }, cursor: "c1" },
+        { node: { id: "2", name: "Bob Fresh" }, cursor: "c2" },
+      ],
+      { hasNextPage: true, hasPreviousPage: false },
+    );
+
+    const result = merge(existing, incoming);
+    // Dedup keeps newer versions, count stays the same
+    expect(result.edges).toHaveLength(2);
+    expect(result.edges[0].node.name).toBe("Alice Fresh");
+    expect(result.edges[1].node.name).toBe("Bob Fresh");
+  });
+
+  it("deduplicates within a single page when cursors repeat", () => {
+    const merge = relayPagination<UsersConnection>();
+
+    const existing = makeConnection(
+      "users",
+      [{ node: { id: "1", name: "Alice" }, cursor: "c1" }],
+      { hasNextPage: true },
+    );
+
+    // Malformed server response: duplicate cursor within one page
+    const incoming = makeConnection(
+      "users",
+      [
+        { node: { id: "2", name: "Bob" }, cursor: "c2" },
+        { node: { id: "3", name: "Charlie" }, cursor: "c2" },
+      ],
+      { hasNextPage: false },
+    );
+
+    const result = merge(existing, incoming);
+    // c1 + one of the c2 duplicates (last wins)
+    expect(result.edges).toHaveLength(2);
+    const c2Edge = result.edges.find((e: any) => e.cursor === "c2")!;
+    expect(c2Edge.node.name).toBe("Charlie");
+  });
+
+  it("handles null cursors in edges (skipped by dedup, not dropped)", () => {
+    const merge = relayPagination();
+
+    const existing = {
+      id: "feed",
+      edges: [{ node: { id: "1" }, cursor: null }],
+      pageInfo: { hasNextPage: true, hasPreviousPage: false, startCursor: null, endCursor: null },
+    };
+
+    const incoming = {
+      id: "feed",
+      edges: [{ node: { id: "2" }, cursor: null }],
+      pageInfo: { hasNextPage: false, hasPreviousPage: false, startCursor: null, endCursor: null },
+    };
+
+    const result = merge(existing, incoming);
+    // null cursors are not strings, so dedup skips them — both kept
+    expect((result.edges as any[]).length).toBe(2);
+  });
+});
+
 // ─────────────────────────────────────────────
 // Integration tests (with plugin + useQuery)
 // ─────────────────────────────────────────────
@@ -487,6 +830,72 @@ describe("Pagination Integration", () => {
       expect(items[1].name).toBe("Bob");
       expect(items[2].name).toBe("Charlie");
       expect(items[3].name).toBe("Diana");
+    });
+  });
+
+  describe("relayPagination with useQuery", () => {
+    it("stores relay connection entity with edges and pageInfo", async () => {
+      const pinia = createPinia();
+      mount(
+        defineComponent({
+          template: "<div></div>",
+          setup() {
+            return {
+              ...useQuery({
+                key: ["users-relay"],
+                query: async () => ({
+                  connectionId: "users",
+                  edges: [
+                    { node: { id: "1", name: "Alice" }, cursor: "c1" },
+                    { node: { id: "2", name: "Bob" }, cursor: "c2" },
+                  ],
+                  pageInfo: {
+                    hasNextPage: true,
+                    hasPreviousPage: false,
+                    startCursor: "c1",
+                    endCursor: "c2",
+                  },
+                }),
+                normalize: true,
+              }),
+            };
+          },
+        }),
+        {
+          global: {
+            plugins: [
+              pinia,
+              [
+                PiniaColada,
+                {
+                  plugins: [
+                    PiniaColadaNormalizer({
+                      entities: {
+                        usersConnection: defineEntity({
+                          idField: "connectionId",
+                          merge: relayPagination(),
+                        }),
+                      },
+                    }),
+                  ],
+                } satisfies PiniaColadaOptions,
+              ],
+            ],
+          },
+        },
+      );
+
+      await flushPromises();
+
+      const entityStore = useEntityStore(pinia);
+      const conn = entityStore.get("usersConnection", "users").value as any;
+      expect(conn).toBeDefined();
+      expect(conn.edges).toHaveLength(2);
+      expect(conn.edges[0].node.name).toBe("Alice");
+      expect(conn.edges[1].node.name).toBe("Bob");
+      expect(conn.pageInfo.hasNextPage).toBe(true);
+      expect(conn.pageInfo.startCursor).toBe("c1");
+      expect(conn.pageInfo.endCursor).toBe("c2");
     });
   });
 

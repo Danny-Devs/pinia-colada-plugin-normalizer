@@ -1,21 +1,31 @@
 /**
- * Pagination merge recipe factories for use with `defineEntity`.
- *
- * These return merge functions that append/prepend pages instead of
- * replacing them — designed for entities that represent paginated
- * collections (e.g., a feed, an infinite-scroll list).
- *
- * Works with both `useQuery` (manual load-more) and `useInfiniteQuery`
- * (Pinia Colada's built-in pagination).
- *
- * Inspired by Apollo Client's `relayStylePagination` and
- * `offsetLimitPagination`, but simpler — these are merge recipe
- * factories for `defineEntity`, not full pagination managers.
- *
+ * Pagination merge recipe factories for `defineEntity({ merge })`.
  * @module pinia-colada-plugin-normalizer/pagination
  */
 
 import type { EntityRecord } from "./types";
+
+// ─────────────────────────────────────────────
+// Relay Connection Types (GraphQL Connection Spec)
+// ─────────────────────────────────────────────
+
+/** @see https://relay.dev/graphql/connections.htm */
+export interface RelayPageInfo {
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+  startCursor: string | null;
+  endCursor: string | null;
+}
+
+export interface RelayEdge<TNode = EntityRecord> {
+  node: TNode;
+  cursor: string | null;
+}
+
+export interface RelayConnection<TNode = EntityRecord> extends EntityRecord {
+  edges: RelayEdge<TNode>[];
+  pageInfo: RelayPageInfo;
+}
 
 // ─────────────────────────────────────────────
 // Cursor-based Pagination
@@ -111,7 +121,7 @@ export function cursorPagination<T extends EntityRecord = EntityRecord>(
 
     // Deduplicate if requested
     if (dedupeKey) {
-      const seen = new Map<unknown, number>();
+      const seen = new Set<unknown>();
       // Walk backwards so later items win
       for (let i = mergedItems.length - 1; i >= 0; i--) {
         const item = mergedItems[i];
@@ -119,10 +129,9 @@ export function cursorPagination<T extends EntityRecord = EntityRecord>(
           const key = (item as Record<string, unknown>)[dedupeKey];
           if (key != null) {
             if (seen.has(key)) {
-              // Remove the earlier duplicate
               mergedItems.splice(i, 1);
             } else {
-              seen.set(key, i);
+              seen.add(key);
             }
           }
         }
@@ -239,7 +248,7 @@ export function offsetPagination<T extends EntityRecord = EntityRecord>(
 
     // Deduplicate if requested
     if (dedupeKey) {
-      const seen = new Map<unknown, number>();
+      const seen = new Set<unknown>();
       for (let i = mergedItems.length - 1; i >= 0; i--) {
         const item = mergedItems[i];
         if (item != null && typeof item === "object") {
@@ -248,7 +257,7 @@ export function offsetPagination<T extends EntityRecord = EntityRecord>(
             if (seen.has(key)) {
               mergedItems.splice(i, 1);
             } else {
-              seen.set(key, i);
+              seen.add(key);
             }
           }
         }
@@ -260,6 +269,141 @@ export function offsetPagination<T extends EntityRecord = EntityRecord>(
       ...existing,
       ...incoming,
       [itemsField]: mergedItems,
+    } as T;
+  };
+}
+
+// ─────────────────────────────────────────────
+// Relay-style Pagination (GraphQL Connection Spec)
+// ─────────────────────────────────────────────
+
+/**
+ * Options for Relay-style connection pagination merge.
+ */
+export interface RelayPaginationOptions {
+  /**
+   * The field on the entity containing the edges array.
+   * @default 'edges'
+   */
+  edgesField?: string;
+
+  /**
+   * The field on the entity containing the pageInfo object.
+   * @default 'pageInfo'
+   */
+  pageInfoField?: string;
+
+  /**
+   * Merge direction.
+   * - 'forward': append new edges after existing (default, for `after` cursors)
+   * - 'backward': prepend new edges before existing (for `before` cursors)
+   * @default 'forward'
+   */
+  direction?: "forward" | "backward";
+
+  /**
+   * Whether to deduplicate edges by cursor value.
+   * When true, edges with the same cursor are kept only once
+   * (the newer version wins).
+   * @default true
+   */
+  dedupeByCursor?: boolean;
+}
+
+/**
+ * Merge function for Relay-style GraphQL connection pagination.
+ * Merges edges, deduplicates by cursor, and stitches `pageInfo`.
+ *
+ * @example
+ * ```typescript
+ * defineEntity<UsersConnection>({
+ *   idField: 'connectionId',
+ *   merge: relayPagination(),
+ * })
+ * ```
+ */
+export function relayPagination<T extends EntityRecord = EntityRecord>(
+  options: RelayPaginationOptions = {},
+): (existing: T, incoming: T) => T {
+  const {
+    edgesField = "edges",
+    pageInfoField = "pageInfo",
+    direction = "forward",
+    dedupeByCursor = true,
+  } = options;
+
+  return (existing: T, incoming: T): T => {
+    const existingEdges = (existing[edgesField] as unknown[] | undefined) ?? [];
+    const incomingEdges = (incoming[edgesField] as unknown[] | undefined) ?? [];
+    const existingPageInfo = existing[pageInfoField] as RelayPageInfo | undefined;
+    const incomingPageInfo = incoming[pageInfoField] as RelayPageInfo | undefined;
+
+    // No existing edges → first page, just accept incoming
+    if (existingEdges.length === 0) {
+      return { ...existing, ...incoming };
+    }
+
+    // No incoming edges → empty page (end of list), update pageInfo only
+    if (incomingEdges.length === 0) {
+      return {
+        ...existing,
+        ...incoming,
+        [edgesField]: existingEdges,
+      } as T;
+    }
+
+    // Merge edges based on direction
+    let mergedEdges: unknown[];
+    if (direction === "backward") {
+      mergedEdges = [...incomingEdges, ...existingEdges];
+    } else {
+      mergedEdges = [...existingEdges, ...incomingEdges];
+    }
+
+    // Deduplicate by cursor (newer version wins)
+    if (dedupeByCursor) {
+      const seen = new Set<string>();
+      for (let i = mergedEdges.length - 1; i >= 0; i--) {
+        const edge = mergedEdges[i];
+        if (edge != null && typeof edge === "object") {
+          const cursor = (edge as Record<string, unknown>).cursor;
+          if (typeof cursor === "string") {
+            if (seen.has(cursor)) {
+              mergedEdges.splice(i, 1);
+            } else {
+              seen.add(cursor);
+            }
+          }
+        }
+      }
+    }
+
+    // Stitch pageInfo: forward keeps existing start + incoming end,
+    // backward keeps incoming start + existing end
+    let mergedPageInfo: RelayPageInfo | undefined;
+    if (existingPageInfo || incomingPageInfo) {
+      if (direction === "forward") {
+        mergedPageInfo = {
+          startCursor: existingPageInfo?.startCursor ?? incomingPageInfo?.startCursor ?? null,
+          endCursor: incomingPageInfo?.endCursor ?? existingPageInfo?.endCursor ?? null,
+          hasPreviousPage: existingPageInfo?.hasPreviousPage ?? incomingPageInfo?.hasPreviousPage ?? false,
+          hasNextPage: incomingPageInfo?.hasNextPage ?? existingPageInfo?.hasNextPage ?? false,
+        };
+      } else {
+        mergedPageInfo = {
+          startCursor: incomingPageInfo?.startCursor ?? existingPageInfo?.startCursor ?? null,
+          endCursor: existingPageInfo?.endCursor ?? incomingPageInfo?.endCursor ?? null,
+          hasPreviousPage: incomingPageInfo?.hasPreviousPage ?? existingPageInfo?.hasPreviousPage ?? false,
+          hasNextPage: existingPageInfo?.hasNextPage ?? incomingPageInfo?.hasNextPage ?? false,
+        };
+      }
+    }
+
+    return {
+      ...existing,
+      ...incoming,
+      [edgesField]: mergedEdges,
+      ...(mergedPageInfo ? { [pageInfoField]: mergedPageInfo } : {}),
     } as T;
   };
 }

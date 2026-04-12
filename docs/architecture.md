@@ -104,7 +104,7 @@ The store is defined as an interface, making the backend swappable:
 
 Possible backends:
 - **Level 1**: In-memory reactive Map (default, no persistence)
-- **Level 2**: IndexedDB + Dexie (offline support)
+- **Level 2**: IndexedDB, raw API (offline support — shipped in 0.1.6)
 - **Level 3**: SQLite + WASM + OPFS (full query planner)
 
 ## Denormalization Cache (Structural Sharing)

@@ -337,6 +337,104 @@ Added to `UseQueryOptions` via module augmentation:
 | `OptimisticTransaction` | Transaction interface for optimistic updates |
 | `PersistenceOptions` | Options for `enablePersistence()` |
 | `PersistenceHandle` | Return type of `enablePersistence()` (`ready`, `flush`, `dispose`) |
+| `CursorPaginationOptions<T>` | Options for `cursorPagination()` |
+| `OffsetPaginationOptions<T>` | Options for `offsetPagination()` |
+| `RelayPaginationOptions` | Options for `relayPagination()` |
+| `RelayPageInfo` | Relay connection `pageInfo` shape |
+| `RelayEdge<TNode>` | Relay connection edge shape |
+| `RelayConnection<TNode>` | Full Relay connection response shape |
+
+## Pagination Helpers
+
+Merge recipe factories for `defineEntity({ merge })`. These control how paginated entities accumulate items across pages.
+
+### `cursorPagination<T>(options)`
+
+Merge function for cursor-based pagination. Appends or prepends items across page loads.
+
+```typescript
+import { cursorPagination, defineEntity } from "pinia-colada-plugin-normalizer";
+
+const feed = defineEntity<Feed>({
+  idField: "feedId",
+  merge: cursorPagination({
+    getCursor: (f) => f.endCursor,
+    itemsField: "items",
+    direction: "forward",
+    dedupeKey: "id",
+  }),
+});
+```
+
+**Options** (`CursorPaginationOptions<T>`):
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `getCursor` | `(entity: T) => string \| number \| null` | *required* | Extract the cursor value |
+| `itemsField` | `string` | `'items'` | Field containing the items array |
+| `direction` | `'forward' \| 'backward'` | `'forward'` | Append or prepend new items |
+| `dedupeKey` | `string` | -- | Field to deduplicate items by (newer wins) |
+
+### `offsetPagination<T>(options)`
+
+Merge function for offset-based pagination. Places items at correct positions in a sparse array.
+
+```typescript
+import { offsetPagination, defineEntity } from "pinia-colada-plugin-normalizer";
+
+const list = defineEntity<ContactList>({
+  idField: "listId",
+  merge: offsetPagination({
+    getOffset: (l) => l.offset,
+    pageSize: 20,
+    itemsField: "contacts",
+  }),
+});
+```
+
+**Options** (`OffsetPaginationOptions<T>`):
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `getOffset` | `(entity: T) => number` | *required* | Extract the current offset |
+| `pageSize` | `number` | *required* | Page size |
+| `itemsField` | `string` | `'items'` | Field containing the items array |
+| `dedupeKey` | `string` | -- | Field to deduplicate items by (newer wins) |
+
+### `relayPagination<T>(options?)`
+
+Merge function for Relay-style GraphQL connection pagination. Handles `edges`, `cursor`, and `pageInfo` stitching.
+
+```typescript
+import { relayPagination, defineEntity } from "pinia-colada-plugin-normalizer";
+import type { RelayConnection } from "pinia-colada-plugin-normalizer";
+
+interface UsersConnection extends RelayConnection<User> {
+  connectionId: string;
+}
+
+const usersConn = defineEntity<UsersConnection>({
+  idField: "connectionId",
+  merge: relayPagination(),
+});
+```
+
+**Options** (`RelayPaginationOptions`):
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `edgesField` | `string` | `'edges'` | Field containing the edges array |
+| `pageInfoField` | `string` | `'pageInfo'` | Field containing the pageInfo object |
+| `direction` | `'forward' \| 'backward'` | `'forward'` | Append or prepend new edges |
+| `dedupeByCursor` | `boolean` | `true` | Deduplicate edges by cursor value (newer wins) |
+
+**Relay types:**
+
+| Type | Description |
+| --- | --- |
+| `RelayPageInfo` | `{ hasNextPage, hasPreviousPage, startCursor, endCursor }` |
+| `RelayEdge<TNode>` | `{ node: TNode, cursor: string }` |
+| `RelayConnection<TNode>` | `{ edges: RelayEdge<TNode>[], pageInfo: RelayPageInfo }` |
 
 ## Deprecated
 

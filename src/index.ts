@@ -43,8 +43,15 @@ export { enablePersistence } from "./persist";
 export type { PersistenceOptions, PersistenceHandle } from "./persist";
 
 // Pagination Helpers
-export { cursorPagination, offsetPagination } from "./pagination";
-export type { CursorPaginationOptions, OffsetPaginationOptions } from "./pagination";
+export { cursorPagination, offsetPagination, relayPagination } from "./pagination";
+export type {
+  CursorPaginationOptions,
+  OffsetPaginationOptions,
+  RelayPaginationOptions,
+  RelayPageInfo,
+  RelayEdge,
+  RelayConnection,
+} from "./pagination";
 
 // Types & Helpers
 export { defineEntity } from "./types";

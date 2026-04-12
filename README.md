@@ -11,7 +11,7 @@ Normalized entity caching plugin for [Pinia Colada](https://github.com/posva/pin
 Store each entity **once**. Update it in one place, every query sees the change. No more stale data from missed cache invalidations.
 
 - **Transparent** — uses Vue's `customRef` to intercept reads/writes. Your app code doesn't know normalization exists.
-- **Minimal** — ~2,400 LOC, zero runtime dependencies. Just Vue + Pinia Colada.
+- **Minimal** — ~4,000 LOC, zero runtime dependencies. Just Vue + Pinia Colada.
 - **Type-safe** — optional `EntityRegistry` for end-to-end typed entity access across the entire API.
 - **Extensible** — swappable `EntityStore` interface for custom backends (IndexedDB, SQLite+WASM).
 
@@ -39,7 +39,7 @@ This is the architectural advantage of building a normalizer on Vue instead of R
 pnpm add pinia-colada-plugin-normalizer
 ```
 
-Requires `@pinia/colada` >= 1.0.0, `vue` >= 3.3.0. Supports **Pinia 2** (^2.2.6) and **Pinia 3** (^3.0.0) — tested on both, 157 tests passing.
+Requires `@pinia/colada` >= 1.0.0, `vue` >= 3.3.0. Supports **Pinia 2** (^2.2.6) and **Pinia 3** (^3.0.0) — tested on both, 171 tests passing.
 
 ## Quick Start
 
@@ -249,6 +249,25 @@ const activeContacts = useEntityQuery("contact", (c) => c.status === "active");
 const statusIndex = createEntityIndex("contact", "status");
 const active = statusIndex.get("active"); // ComputedRef<Contact[]>
 ```
+
+## Pagination Helpers
+
+Merge recipe factories for paginated entities. Use with `defineEntity({ merge })`:
+
+```typescript
+import { cursorPagination, offsetPagination, relayPagination, defineEntity } from "pinia-colada-plugin-normalizer";
+
+// Cursor-based (REST feeds, infinite scroll)
+defineEntity({ idField: "feedId", merge: cursorPagination({ getCursor: (f) => f.endCursor }) });
+
+// Offset-based (traditional paginated lists)
+defineEntity({ idField: "listId", merge: offsetPagination({ getOffset: (l) => l.offset, pageSize: 20 }) });
+
+// Relay-style (GraphQL Connection Spec — edges, cursors, pageInfo)
+defineEntity({ idField: "connectionId", merge: relayPagination() });
+```
+
+All three handle page accumulation, deduplication, and direction (forward/backward). Relay pagination also stitches `pageInfo` (`hasNextPage`/`hasPreviousPage`) correctly across pages.
 
 ## Coalescing
 

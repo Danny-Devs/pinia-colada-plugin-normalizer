@@ -351,8 +351,20 @@ export function setupDevtools(app: any, entityStore: EntityStore, queryCache?: a
                     backgroundColor: 0x999999,
                   });
                 }
-                // Check for auto-redirect placeholder
-                if ((entry as any).placeholderData != null) {
+                // Show cache redirect source
+                if (meta?.redirectSource === "auto") {
+                  tags.push({
+                    label: "autoRedirect",
+                    textColor: 0xffffff,
+                    backgroundColor: 0x5cb85c,
+                  });
+                } else if (meta?.redirectSource === "manual") {
+                  tags.push({
+                    label: "redirect",
+                    textColor: 0xffffff,
+                    backgroundColor: 0x5bc0de,
+                  });
+                } else if ((entry as any).placeholderData != null) {
                   tags.push({
                     label: "placeholder",
                     textColor: 0xffffff,
@@ -392,6 +404,10 @@ export function setupDevtools(app: any, entityStore: EntityStore, queryCache?: a
                 {
                   key: "hasPlaceholderData",
                   value: (entry as any).placeholderData != null,
+                },
+                {
+                  key: "redirectSource",
+                  value: meta?.redirectSource ?? "none",
                 },
               ];
 

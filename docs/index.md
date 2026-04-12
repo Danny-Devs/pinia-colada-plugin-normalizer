@@ -28,7 +28,7 @@ This plugin uses Vue's `customRef` to transparently intercept reads and writes o
 pnpm add pinia-colada-plugin-normalizer
 ```
 
-Requires `@pinia/colada` >= 1.0.0, `pinia` >= 2.1.0, `vue` >= 3.3.0.
+Requires `@pinia/colada` >= 1.0.0, `pinia` ^2.2.6 || ^3.0.0, `vue` >= 3.3.0.
 
 ## Quick Start
 

@@ -462,6 +462,13 @@ export interface NormMeta {
   isNormalized: boolean;
   /** Entity keys extracted from this entry's data */
   entityKeys: Set<string>;
+  /**
+   * How placeholder data was provided for this query, if at all.
+   * - 'auto': `autoRedirect` matched a [entityType, id] key pattern
+   * - 'manual': per-query `redirect: { entityType }` config
+   * - undefined: no redirect (or user-provided placeholderData)
+   */
+  redirectSource?: "auto" | "manual";
 }
 
 /**

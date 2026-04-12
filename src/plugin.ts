@@ -252,6 +252,12 @@ export function PiniaColadaNormalizer(options: NormalizerPluginOptions = {}): Pi
               if (rawEntity != null) {
                 // Denormalize to resolve nested EntityRefs before handing to the template
                 (entry as any).placeholderData = denormalize(rawEntity, entityStoreInstance);
+                // Track the redirect source for DevTools visibility
+                const meta = entry.ext[NORM_META_KEY];
+                meta.value = {
+                  ...meta.value,
+                  redirectSource: (redirectOpt && typeof redirectOpt === "object") ? "manual" : "auto",
+                };
               }
             }
           }

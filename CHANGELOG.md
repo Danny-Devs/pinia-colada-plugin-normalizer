@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.1.8 (unreleased)
+
+### Features
+- **`relayPagination()`** — Merge recipe for GraphQL Relay Connection Spec. Handles `edges` merge, cursor dedup, and `pageInfo` stitching (forward + backward). Exported types: `RelayPaginationOptions`, `RelayPageInfo`, `RelayEdge`, `RelayConnection`.
+- **DevTools: cache redirect source** — Three-tier color-coded tags distinguish `autoRedirect` (green), per-query `redirect` (blue), and user-provided `placeholderData` (amber). `NormMeta.redirectSource` tracks provenance.
+
+### Fixes
+- **Dedup Map→Set** — All three pagination helpers (`cursorPagination`, `offsetPagination`, `relayPagination`) now use `Set` instead of `Map` for deduplication. The stored index values were unused and would have been stale after `splice` — a latent bug.
+- **`RelayEdge.cursor` accepts `string | null`** — Matches the GraphQL Connection Spec (some APIs return `null` cursors on boundary edges).
+
+### Compatibility
+- **Pinia 3** — 171 tests pass on both Pinia 2.3.1 and 3.0.4. Peer dep tightened to `^2.2.6 || ^3.0.0`.
+
+### Docs
+- Pagination helpers section added to API reference (was missing all 3 helpers + types).
+- Fixed stale Pinia peer dep in getting-started (`>= 2.1.0` → `^2.2.6 || ^3.0.0`).
+- Fixed architecture page referencing Dexie (persistence uses raw IndexedDB).
+- README: pagination section added, test count updated (157→171), LOC updated (~2,400→~4,000).
+
+### Tests
+- 157 → 171 tests. 14 new tests for relay pagination (11 unit + 1 integration) and edge cases (full page refresh, duplicate cursors within page, null cursors).
+
 ## 0.1.7 (2026-03-16)
 
 No user-facing changes. Playground simplification only:
