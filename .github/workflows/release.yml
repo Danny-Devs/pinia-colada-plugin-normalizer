@@ -1,0 +1,53 @@
+# Trusted publishing: pushing a version tag (v0.3.0) publishes to npm via
+# OIDC — no tokens, no OTP. Requires the one-time browser step: npmjs.com →
+# package → Settings → Trusted Publisher → GitHub Actions, repository
+# Danny-Devs/pinia-colada-plugin-normalizer, workflow release.yml.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write # OIDC token for npm trusted publishing + provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      # npm >= 11.5.1 required for OIDC trusted publishing
+      - run: npm install -g npm@latest
+
+      - run: pnpm install --frozen-lockfile
+
+      # The tag must match package.json — refuse to publish a mismatch
+      - name: Verify tag matches package version
+        run: |
+          PKG_VERSION="v$(node -p "require('./package.json').version")"
+          if [ "$PKG_VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json $PKG_VERSION" >&2
+            exit 1
+          fi
+
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+
+      # No NODE_AUTH_TOKEN: auth is the OIDC exchange (trusted publisher).
+      # Provenance attestation is generated automatically under OIDC.
+      - run: npm publish
