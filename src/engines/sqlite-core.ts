@@ -62,6 +62,20 @@ export function writeBatchRows(
   db.exec({ sql: "BEGIN IMMEDIATE" });
   try {
     for (const { key, value } of puts) {
+      // Name the offending entity on serialization failure — a poison
+      // entity (BigInt, circular ref) disables persistence via the
+      // coordinator's degrade path, and an anonymous error would leave
+      // no way to find which one.
+      let json: string;
+      try {
+        json = JSON.stringify(value);
+      } catch (err) {
+        throw new Error(
+          `Entity '${key}' is not JSON-serializable (sqliteEngine requires JSON-safe fields): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
       db.exec({
         sql: `INSERT INTO entities (key, data, row_version, updated_at)
               VALUES (?, ?, 1, ?)
@@ -69,7 +83,7 @@ export function writeBatchRows(
                 data = excluded.data,
                 row_version = entities.row_version + 1,
                 updated_at = excluded.updated_at`,
-        bind: [key, JSON.stringify(value), now],
+        bind: [key, json, now],
       });
     }
     for (const key of deletes) {

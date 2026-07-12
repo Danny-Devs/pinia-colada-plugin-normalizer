@@ -76,25 +76,45 @@ const store = createEntityStore();
 
 ### `enablePersistence(store, options?)`
 
-Enable IndexedDB persistence for an entity store. See the [Persistence guide](/persistence) for details.
+Enable write-behind persistence for an entity store through a swappable `StorageEngine`. Default engine: IndexedDB. See the [Persistence guide](/persistence) for details and the SQLite worker setup.
 
 ```typescript
-import { enablePersistence } from "pinia-colada-plugin-normalizer";
+import { enablePersistence, sqliteEngine } from "pinia-colada-plugin-normalizer";
 
+// Default (IndexedDB):
 const { ready, flush, dispose } = enablePersistence(entityStore, {
   dbName: "my-app",
 });
 await ready;
+
+// SQLite over OPFS:
+enablePersistence(entityStore, {
+  engine: sqliteEngine({
+    worker: () => new Worker(new URL("./sqlite.worker.ts", import.meta.url), { type: "module" }),
+  }),
+});
 ```
 
 **Options** (`PersistenceOptions`):
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `dbName` | `string` | `'pcn_entities'` | IndexedDB database name |
+| `engine` | `StorageEngine` | `idbEngine({ dbName })` | Durability substrate: `idbEngine`, `sqliteEngine`, `memoryEngine`, or custom |
+| `dbName` | `string` | `'pcn_entities'` | Database name for the default engine |
 | `writeDebounce` | `number` | `100` | Debounce interval (ms) for batching writes |
-| `onReady` | `() => void` | -- | Called when hydration from IDB completes |
+| `onReady` | `() => void` | -- | Called when hydration completes |
 | `onError` | `(error: unknown) => void` | -- | Called when persistence degrades |
+
+### Storage engines
+
+| Export | Description |
+| --- | --- |
+| `idbEngine({ dbName? })` | IndexedDB (default). Zero setup, zero dependencies. |
+| `sqliteEngine({ worker, dbName? })` | SQLite-WASM on OPFS (`opfs-sahpool`, no COOP/COEP). Requires the optional peer `@sqlite.org/sqlite-wasm` and a two-line app worker file importing `runSqliteWorker` from `pinia-colada-plugin-normalizer/sqlite-worker`. `engine.persistent` reports OPFS availability. |
+| `memoryEngine()` | In-memory (tests/SSR). `snapshot()` exposes contents for assertions. |
+| `StorageEngine` (type) | Implement `isSupported/open/loadAll/writeBatch/close` for a custom backend. |
+
+Event semantics at the engine boundary (ADR-004): `remove` deletes the durable row, `evict` (cache GC) keeps it, `clear()` deletes all rows.
 
 **Returns** (`PersistenceHandle`):
 

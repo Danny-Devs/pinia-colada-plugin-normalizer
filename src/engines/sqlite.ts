@@ -125,9 +125,45 @@ export function sqliteEngine(options: SqliteEngineOptions): SqliteEngine {
     close() {
       if (!worker) return;
       const w = worker;
-      // Best-effort graceful close, then terminate.
-      call("close").catch(() => {}).finally(() => w.terminate());
       worker = null;
+
+      // Termination must be UNCONDITIONAL and every pending call must
+      // settle. Gating terminate on the worker's close-reply deadlocks:
+      // dispose() during an in-flight open() gets the close handled first
+      // (the worker's handler is async), the worker dies before the open
+      // response exists, and enablePersistence().ready hangs forever.
+      // A crashed worker similarly never replies. Best-effort graceful
+      // close, then a hard deadline.
+      const id = nextId++;
+      let finished = false;
+      const finish = () => {
+        // Idempotent: the close sentinel below is itself in `pending`, so
+        // rejecting the map re-enters finish — the guard makes that a no-op.
+        if (finished) return;
+        finished = true;
+        pending.delete(id);
+        w.terminate();
+        const err = new Error("SQLite engine closed");
+        for (const entry of pending.values()) entry.reject(err);
+        pending.clear();
+      };
+      const timer = setTimeout(finish, 500);
+      pending.set(id, {
+        resolve: () => {
+          clearTimeout(timer);
+          finish();
+        },
+        reject: () => {
+          clearTimeout(timer);
+          finish();
+        },
+      });
+      try {
+        w.postMessage({ id, op: "close" } satisfies SqliteWorkerRequest);
+      } catch {
+        clearTimeout(timer);
+        finish();
+      }
     },
   };
 }

@@ -324,8 +324,12 @@ export interface EntityStore {
  *   itself (the in-memory store keeps working).
  * - `loadAll` may include a per-row `version` (engine write counter,
  *   server timestamp) — the ADR-005 causality slot. Optional.
- * - Values passed to `writeBatch` are already JSON-safe (EntityRefs are
- *   encoded by the coordinator); engines store and return them opaquely.
+ * - Values passed to `writeBatch` have EntityRefs wire-encoded by the
+ *   coordinator; USER entity fields pass through untouched. Engines store
+ *   and return values opaquely — but their serialization limits leak:
+ *   idbEngine structured-clones (Dates survive), sqliteEngine JSON-encodes
+ *   (Dates become strings; BigInt/circular throw and fail the batch).
+ *   Entities should stick to JSON-safe fields for engine portability.
  */
 export interface StorageEngine {
   /**

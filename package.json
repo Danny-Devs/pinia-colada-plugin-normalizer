@@ -90,7 +90,7 @@
   },
   "peerDependencies": {
     "@pinia/colada": ">=1.0.0 <2.0.0",
-    "@sqlite.org/sqlite-wasm": ">=3.50.0",
+    "@sqlite.org/sqlite-wasm": "*",
     "@vue/devtools-api": ">=7.0.0",
     "pinia": "^2.2.6 || ^3.0.0",
     "vue": ">=3.3.0"

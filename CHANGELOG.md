@@ -12,8 +12,14 @@ Phase-4 Stage 1: the SQLite durability engine (ADR-003 implemented).
 - **Playground: SQLite page** — kill-the-tab demo; verified in a real browser: write→survives reload, evict→row survives, delete→row gone (ADR-004 observed end-to-end on real OPFS).
 - **CI: trusted-publishing release workflow** — pushing a `v*` tag runs gates and publishes via npm OIDC (no tokens; requires the one-time trusted-publisher registration on npmjs.com).
 
+### Fixes (adversarial pre-ship review — see LESSONS.md)
+- **sqlite-wasm peer range `>=3.50.0` → `*`** — every upstream release is a `-buildN` prerelease, which semver excludes from normal ranges; the old range made `npm install` hard-fail for anyone actually installing the optional peer. Regression-tested.
+- **`sqliteEngine.close()` no longer deadlocks `ready`** — terminate was gated on the worker replying; a dispose during an in-flight `open()` (unmount, Vite HMR during boot) hung `enablePersistence().ready` forever, and a crashed worker leaked its OPFS pool locks. Now: unconditional terminate behind a 500ms deadline, every pending call settles. Regression-tested with a protocol-faithful fake worker.
+- **Serialization failures name the offending entity** — a poison field (BigInt, circular) fails the batch with `Entity 'type:id' is not JSON-serializable…` instead of an anonymous error before persistence degrades. JSON-vs-structured-clone divergence from idbEngine documented.
+- **Release workflow: npm pinned to `@11`** (was `@latest`).
+
 ### Tests
-- StorageEngine contract suite (runs against every engine), coordinator×engine integration (incl. ADR-004 evict-vs-remove at the engine boundary), and the SQLite SQL core exercised against **real sqlite-wasm** (`:memory:`) in Node — schema idempotency, JSON round-trip, `row_version` bookkeeping, batch-transaction atomicity. 197 tests total (was 185).
+- StorageEngine contract suite (runs against every engine), coordinator×engine integration (incl. ADR-004 evict-vs-remove at the engine boundary), sqliteEngine RPC lifecycle (dispose-during-open, dead-worker deadline), and the SQLite SQL core exercised against **real sqlite-wasm** (`:memory:`) in Node — schema idempotency, JSON round-trip, `row_version` bookkeeping, batch-transaction atomicity. 200 tests total (was 185).
 
 ### Docs
 - persistence.md: Storage Engines section (sqlite worker setup, custom-engine guide); fixed stale `store.clear()` edge-case row (0.2.0 behavior).

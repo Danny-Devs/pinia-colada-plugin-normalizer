@@ -117,6 +117,83 @@ describe("enablePersistence with a custom engine", () => {
 });
 
 // ─────────────────────────────────────────────
+// sqliteEngine RPC lifecycle — protocol-faithful fake worker
+// ─────────────────────────────────────────────
+
+describe("sqliteEngine lifecycle", () => {
+  it("close() during an in-flight open() settles open (no hang) and terminates the worker", async () => {
+    // Regression: terminate used to be gated on the worker's close-reply;
+    // a dispose during boot handled `close` before `open` ever answered,
+    // so enablePersistence().ready hung forever.
+    const { sqliteEngine } = await import("./sqlite");
+
+    let terminated = false;
+    // Fake worker: answers `close` immediately, NEVER answers `open`
+    // (mimics the real worker mid-wasm-init).
+    const fakeWorker = {
+      onmessage: null as ((e: { data: unknown }) => void) | null,
+      onerror: null as unknown,
+      postMessage(msg: { id: number; op: string }) {
+        if (msg.op === "close") {
+          queueMicrotask(() =>
+            this.onmessage?.({ data: { id: msg.id, ok: true } }),
+          );
+        }
+        // `open` is swallowed — no reply, ever.
+      },
+      terminate() {
+        terminated = true;
+      },
+    };
+
+    const engine = sqliteEngine({ worker: fakeWorker as unknown as Worker });
+    const openPromise = engine.open();
+    engine.close();
+
+    // open() must SETTLE (reject) — a hang here fails the test by timeout
+    await expect(openPromise).rejects.toThrow("SQLite engine closed");
+    expect(terminated).toBe(true);
+  });
+
+  it("close() on a dead worker still terminates after the deadline", async () => {
+    const { sqliteEngine } = await import("./sqlite");
+    let terminated = false;
+    const deadWorker = {
+      onmessage: null,
+      onerror: null,
+      postMessage() {}, // corpse: never replies to anything
+      terminate() {
+        terminated = true;
+      },
+    };
+    const engine = sqliteEngine({ worker: deadWorker as unknown as Worker });
+    const openPromise = engine.open().catch(() => {}); // will be rejected by close
+    engine.close();
+    await new Promise((r) => setTimeout(r, 600)); // past the 500ms deadline
+    expect(terminated).toBe(true);
+    await openPromise;
+  });
+});
+
+// ─────────────────────────────────────────────
+// Packaging invariant (LESSONS.md 2026-07-12)
+// ─────────────────────────────────────────────
+
+describe("packaging", () => {
+  it("sqlite-wasm peer range stays '*' — every upstream release is a prerelease", async () => {
+    // Any normal range (>=3.50.0) matches ZERO published versions of
+    // @sqlite.org/sqlite-wasm because they all carry -buildN prerelease
+    // tags, which semver excludes → npm install hard-fails for consumers.
+    // Read via fs, NOT import: a JSON module import would pull the package
+    // root into tsc's inferred rootDir and break declaration bundling.
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const pkg = JSON.parse(readFileSync(resolve(process.cwd(), "package.json"), "utf8"));
+    expect(pkg.peerDependencies["@sqlite.org/sqlite-wasm"]).toBe("*");
+  });
+});
+
+// ─────────────────────────────────────────────
 // SQLite SQL core — real sqlite-wasm, in-memory, in Node.
 // The worker shell is I/O-only; this is where the SQL lives.
 // Skipped gracefully if the wasm module can't load in this environment.

@@ -169,6 +169,10 @@ If OPFS is unavailable (insecure context, old browser), the engine falls back to
 
 Every row carries a `row_version` counter that increments on write — the causality hook that version-aware sync builds on later (ADR-005).
 
+**Serialization note:** `sqliteEngine` stores entities as JSON. Fields must be JSON-serializable — `Date` objects round-trip as ISO strings (unlike `idbEngine`, which structured-clones), and a `BigInt` or circular field fails the whole batch (the error names the offending entity, and persistence degrades gracefully). For engine portability, keep entity fields JSON-safe.
+
+**Peer version note:** every published `@sqlite.org/sqlite-wasm` version is a `-buildN` prerelease, so the plugin declares the peer as `*`; the practical floor is ≥ 3.50 (`opfs-sahpool` maturity).
+
 ### `memoryEngine()` — tests & SSR
 
 Implements the contract with all I/O removed. `snapshot()` exposes engine contents for assertions. Also the reference implementation to read before writing a custom engine.

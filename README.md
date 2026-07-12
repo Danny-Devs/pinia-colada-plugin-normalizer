@@ -13,7 +13,7 @@ Store each entity **once**. Update it in one place, every query sees the change.
 - **Transparent** — uses Vue's `customRef` to intercept reads/writes. Your app code doesn't know normalization exists.
 - **Minimal** — ~4,000 LOC, zero runtime dependencies. Just Vue + Pinia Colada.
 - **Type-safe** — optional `EntityRegistry` for end-to-end typed entity access across the entire API.
-- **Extensible** — swappable `EntityStore` interface for custom backends (IndexedDB, SQLite+WASM).
+- **Local-first persistence** — write-behind `StorageEngine` substrates: IndexedDB (default) or **SQLite-WASM on OPFS** (`sqliteEngine`), plus a swappable interface for custom backends.
 
 ## Why Vue Changes Everything
 
@@ -39,7 +39,7 @@ This is the architectural advantage of building a normalizer on Vue instead of R
 pnpm add pinia-colada-plugin-normalizer
 ```
 
-Requires `@pinia/colada` >= 1.0.0, `vue` >= 3.3.0. Supports **Pinia 2** (^2.2.6) and **Pinia 3** (^3.0.0) — tested on both, 171 tests passing.
+Requires `@pinia/colada` >= 1.0.0, `vue` >= 3.3.0. Supports **Pinia 2** (^2.2.6) and **Pinia 3** (^3.0.0) — the full test suite runs on both.
 
 ## Quick Start
 
