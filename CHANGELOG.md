@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 (unreleased)
+## 0.2.0 (2026-07-12)
 
 Audit-driven release (see `../AUDIT-2026-07-11.md`): two HIGH bug fixes and the three architectural decisions (ADR-003/004/005) that unblock Phase 4 (local-first).
 
