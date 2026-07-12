@@ -66,12 +66,12 @@ function writeEntitiesToStore(
   }
   for (const entity of customMergeEntities) {
     const mergeFn = entityDefs[entity.entityType].merge!;
-    if (store.has(entity.entityType, entity.id)) {
-      const existing = store.get(entity.entityType, entity.id).value!;
-      store.replace(entity.entityType, entity.id, mergeFn(existing, entity.data));
-    } else {
-      store.set(entity.entityType, entity.id, entity.data);
-    }
+    // Atomic read-modify-write: the merge runs inside the store so an
+    // interleaved write (sync loop, async backend) can't land between the
+    // read and the write and get silently lost.
+    store.update(entity.entityType, entity.id, (existing) =>
+      existing ? mergeFn(existing, entity.data) : entity.data,
+    );
   }
 }
 
@@ -166,6 +166,24 @@ export function PiniaColadaNormalizer(options: NormalizerPluginOptions = {}): Pi
     autoNormalize = false,
     autoRedirect = false,
   } = options;
+
+  // A definition with neither `idField` nor `getId` never matches via the
+  // explicit-definition path in identifyEntity() — objects of that type are
+  // only normalized when they carry a matching `__typename` (GraphQL
+  // convention). That's valid for GraphQL, but for REST APIs it silently
+  // normalizes nothing (and any `merge` recipe never runs). Warn in dev so
+  // the silence is diagnosable.
+  if (process.env.NODE_ENV !== "production") {
+    for (const [entityType, def] of Object.entries(entityDefs)) {
+      if (!def.idField && !def.getId) {
+        console.warn(
+          `[pinia-colada-plugin-normalizer] Entity definition '${entityType}' has neither ` +
+            `'idField' nor 'getId'. It will only match objects with __typename === '${entityType}'. ` +
+            `For REST APIs without __typename, set 'idField' (e.g., idField: 'id') explicitly.`,
+        );
+      }
+    }
+  }
 
   const pluginCallback: PiniaColadaPlugin = ({ queryCache, pinia, scope }) => {
     // Guard: prevent silent state overwrite from duplicate installation.
@@ -613,8 +631,8 @@ export function updateQueryData(
  * **Important**: If using with optimistic updates, the optimistic
  * transaction should be committed (or will be rolled back on error)
  * before the server response is normalized. The standard `onMutate` →
- * `onSuccess` → `onError` lifecycle handles this correctly when using
- * `apply()` which auto-rolls-back on error.
+ * `onSuccess` → `onError` lifecycle handles this correctly: `commit()` on
+ * success (drops the optimistic transaction), `rollback()` on error.
  *
  * @example
  * ```typescript
@@ -627,13 +645,16 @@ export function updateQueryData(
  *   onSuccess: (response) => normalizeMutation(response),
  * })
  *
- * // With optimistic updates:
- * const { apply } = useOptimisticUpdate()
+ * // With optimistic updates — commit on success, rollback on error:
+ * const optimistic = useOptimisticUpdate()
  * const { mutate } = useMutation({
  *   mutation: (data) => api.updateContact(data),
- *   onMutate: (data) => apply('contact', data.contactId, data),
- *   onSuccess: (response) => normalizeMutation(response),
- *   onError: (_err, _vars, rollback) => rollback?.(),
+ *   onMutate: (data) => optimistic.apply('contact', data.contactId, data),
+ *   onSuccess: (response, _vars, tx) => {
+ *     tx?.commit()
+ *     normalizeMutation(response)
+ *   },
+ *   onError: (_err, _vars, tx) => tx?.rollback(),
  * })
  * ```
  */

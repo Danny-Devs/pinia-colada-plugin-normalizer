@@ -249,8 +249,9 @@ import { useOptimisticUpdate } from "pinia-colada-plugin-normalizer";
 
 const { apply, transaction } = useOptimisticUpdate();
 
-// Simple:
-const rollback = apply("contact", "1", { name: "Alicia" });
+// Simple — returns { commit, rollback }; settle exactly one:
+const tx = apply("contact", "1", { name: "Alicia" });
+// success → tx.commit()   failure → tx.rollback()
 
 // Multi-mutation:
 const tx = transaction();

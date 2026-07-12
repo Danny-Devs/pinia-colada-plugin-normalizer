@@ -64,30 +64,55 @@ export type ResolveEntity<K extends string> = K extends keyof EntityRegistry
  * `previousData` are typed accordingly.
  */
 export interface EntityEvent<T extends EntityRecord = EntityRecord> {
-  /** The type of change */
-  type: "set" | "remove";
+  /**
+   * The type of change.
+   *
+   * - `set` — entity written (created or merged)
+   * - `remove` — entity deleted *semantically*: it should cease to exist.
+   *   Persistence layers delete the durable row; sync layers replicate the
+   *   deletion to other devices.
+   * - `evict` — entity dropped from the *memory projection only* (cache
+   *   trimming, GC). Persistence layers MUST keep the durable row; sync
+   *   layers MUST NOT replicate it. Evicted entities may be re-hydrated later.
+   *
+   * The evict/remove split exists so that local cache management can never
+   * be misread as data deletion by a durability or replication layer.
+   */
+  type: "set" | "remove" | "evict";
   /** Entity type (e.g., 'contact', 'order') */
   entityType: string;
   /** Entity ID */
   id: string;
   /** The full entity key */
   key: EntityKey;
-  /** The entity data (undefined for 'remove' events) */
+  /** The entity data (undefined for 'remove'/'evict' events) */
   data: T | undefined;
   /** The previous entity data (undefined if entity didn't exist before) */
   previousData: T | undefined;
+  /**
+   * Optional causality/version metadata for this change.
+   *
+   * The in-memory store does not populate this. Persistence and sync
+   * backends (e.g., cr-sqlite `db_version`, server `updatedAt`) may attach
+   * a version so downstream consumers can arbitrate "which write is newer"
+   * instead of relying on arrival order. Reserved now so the event shape
+   * doesn't calcify before a sync backend exists (see ADR-005).
+   */
+  version?: string | number;
 }
 
 /**
  * The EntityStore interface — the core contract that all backends implement.
  *
- * This interface is designed to be backend-agnostic:
- * - Level 1: In-memory reactive Map (default, no persistence)
- * - Level 2: IndexedDB + Dexie (quick offline)
- * - Level 3: SQLite + WASM + OPFS (full query planner, IVM via triggers)
- *
- * Consumers interact through this interface and never know which backend
- * is running underneath.
+ * Architecture note (ADR-003): the read side of this contract is
+ * deliberately SYNCHRONOUS — `get()` returns a ref immediately and the
+ * plugin denormalizes on every read. An async storage engine (IndexedDB,
+ * SQLite-WASM/OPFS in a worker) therefore does NOT implement this
+ * interface directly. Instead, the in-memory store remains the
+ * synchronous read *projection*, and durable engines sit underneath as
+ * write-behind substrates wired up via `subscribe()` (writes flow down)
+ * and `hydrate()` (boot data flows up) — see `enablePersistence()` for
+ * the reference implementation of that pattern.
  */
 export interface EntityStore {
   // ── Writes ──────────────────────────────────
@@ -129,9 +154,36 @@ export interface EntityStore {
   setMany(entities: Array<{ entityType: string; id: string; data: EntityRecord }>): void;
 
   /**
-   * Remove an entity from the store.
+   * Remove an entity from the store — a *semantic delete*.
+   * Emits a `remove` event: persistence deletes the durable row and sync
+   * layers replicate the deletion. Use `evict()` for cache trimming.
    */
   remove(entityType: string, id: string): void;
+
+  /**
+   * Drop an entity from the memory projection WITHOUT deleting it durably —
+   * a *cache eviction*. Emits an `evict` event: persistence keeps the row
+   * (the entity can re-hydrate later) and sync layers ignore it.
+   * `gc()` evicts; it never deletes. See ADR-004.
+   */
+  evict(entityType: string, id: string): void;
+
+  /**
+   * Atomically read-modify-write an entity. The updater receives the
+   * current value (or `undefined` if absent) and returns the complete new
+   * value, which is stored with replace semantics (no implicit merge).
+   *
+   * Custom merge recipes run through this so the read and the write are a
+   * single store operation — an interleaving write between a caller's own
+   * `get()` and `replace()` can't be lost. On the in-memory store this is
+   * trivially atomic (single-threaded); async backends must honor the same
+   * guarantee transactionally.
+   */
+  update(
+    entityType: string,
+    id: string,
+    updater: (existing: EntityRecord | undefined) => EntityRecord,
+  ): void;
 
   // ── Reads ───────────────────────────────────
 
@@ -216,18 +268,28 @@ export interface EntityStore {
   getRefCount(entityType: string, id: string): number | undefined;
 
   /**
-   * Remove entities with zero or negative reference counts.
-   * Only affects entities that have been `retain()`ed at least once —
-   * entities created via direct `set()` (never retained) are untouched.
+   * Evict entities with zero or negative reference counts from the memory
+   * projection. Only affects entities that have been `retain()`ed at least
+   * once — entities created via direct `set()` (never retained) are untouched.
    *
-   * @returns Array of removed entity keys (e.g., ['contact:42', 'order:5'])
+   * This is cache trimming, not deletion: evicted entities emit `evict`
+   * events, so persisted copies survive and can re-hydrate (ADR-004).
+   * Also sweeps never-populated phantom refs (created by `get()` misses)
+   * that no refcount tracks; live watchers of swept phantoms are
+   * re-triggered so they re-establish tracking.
+   *
+   * @returns Array of evicted entity keys (e.g., ['contact:42', 'order:5'])
    */
   gc(): string[];
 
   // ── Lifecycle ───────────────────────────────
 
   /**
-   * Clear all entities from the store.
+   * Clear all entities from the store — a *semantic delete* of everything
+   * (logout, account switch, test reset). Emits a `remove` event per entity,
+   * so persistence layers clear their durable copies and reactive consumers
+   * (indexes, denorm caches, `useEntityRef`) update. Live refs are set to
+   * `undefined` before removal so existing watchers fire.
    */
   clear(): void;
 
@@ -271,7 +333,14 @@ export interface EntityStore {
 export interface EntityDefinition<T extends EntityRecord = EntityRecord> {
   /**
    * The field name that contains the entity's unique ID.
-   * @default 'id'
+   *
+   * Note: there is NO implicit default here. A definition without `idField`
+   * and without `getId` never matches via the explicit-definition path —
+   * such objects are only normalized through the `__typename` convention
+   * (GraphQL). For REST APIs without `__typename`, set `idField` (or
+   * `getId`) explicitly. Applying an implicit `'id'` default would make any
+   * id-bearing object match this type (cross-type collisions), so it is
+   * deliberately not done.
    */
   idField?: (string & keyof T) | (string & {});
 

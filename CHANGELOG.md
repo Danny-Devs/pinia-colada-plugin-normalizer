@@ -1,9 +1,28 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (unreleased)
+
+Audit-driven release (see `../AUDIT-2026-07-11.md`): two HIGH bug fixes and the three architectural decisions (ADR-003/004/005) that unblock Phase 4 (local-first).
+
+### Breaking
+- **`apply()` now returns `{ commit, rollback }`** instead of a bare rollback function. Previously, successful mutations leaked live transactions: a later rollback on the same entity restored a pre-first-mutation snapshot and replayed stale optimistic data over server-confirmed fields, and `activeTransactions`/`serverTruth` grew unbounded. Call `tx.commit()` in `onSuccess` and `tx.rollback()` in `onError`.
+- **`EntityEvent.type` gains `"evict"`** and `EntityStore` gains `evict(type, id)` (ADR-004). `gc()` now evicts (memory-only; persistence keeps the durable row) instead of removing (semantic delete). Subscribers that pattern-match event types must handle `"evict"`; external EntityStore implementations must add the method.
+- **`clear()` now emits a `remove` event per entity** (previously silent). Persistence clears durable copies; indexes, denorm caches, and live refs update instead of rendering ghosts.
+- **`EntityStore` gains `update(type, id, updater)`** — atomic read-modify-write. Custom merge recipes now run through it, closing a lost-update window between the plugin's read and write.
+
+### Fixes
+- **`remove()`/`clear()` no longer orphan handed-out refs** — refs are set to `undefined` before map deletion, so `useEntityRef` and other watchers see deletions and track re-adds (previously they rendered the deleted entity forever).
+- **`gc()` sweeps never-populated phantom refs** (created by `get()` misses) that no refcount tracks — previously immortal, one permanent map entry per visited-but-missing ID. Live watchers are re-triggered and re-establish tracking.
+- **Persistence: writes made before the DB finishes opening are flushed once it opens** (previously stranded until the next store event or tab-hide).
+- **Dev warning when an entity definition has neither `idField` nor `getId`** — such definitions only match via `__typename`; the docs previously claimed a `@default 'id'` that was never applied (docs corrected).
+
+### Architecture (Phase-4 groundwork)
+- **ADR-003:** SQLite-WASM/OPFS is a write-behind durability substrate under the in-memory read projection — not a store swap. Engine choice: official `@sqlite.org/sqlite-wasm` + `opfs-sahpool`.
+- **ADR-004:** evict (memory-only) vs remove (semantic delete) split — local GC can never become fleet-wide data deletion under sync.
+- **ADR-005:** `EntityEvent.version?` metadata slot reserved; pagination containers are device-local (never replicated); sync posture is server-authoritative (PowerSync / Turso-sync candidates) — **cr-sqlite plan retired** (project dead since 2024).
 
 ### Compatibility
-- **@pinia/colada 1.3.1** — verified 2026-07-11: 171 tests, typecheck, build, and playground boot all green against 1.3.1 (dev dep and playground bumped from 1.1.0; no source changes required). Upstream 1.1→1.3 has no breaking changes — plugin API (`extend` hook, `entry.state` customRef, Symbol ext keys) untouched.
+- **@pinia/colada 1.3.1** — verified 2026-07-11: full suite, typecheck, build, and playground boot all green against 1.3.1 (dev dep and playground bumped from 1.1.0). Upstream 1.1→1.3 has no breaking changes — plugin API (`extend` hook, `entry.state` customRef, Symbol ext keys) untouched.
 
 ### Chore
 - Drop unused `RelayConnection` type import in `pagination.spec.ts` (oxlint warning).

@@ -145,11 +145,12 @@ import { useOptimisticUpdate } from "pinia-colada-plugin-normalizer";
 
 const { apply, transaction } = useOptimisticUpdate();
 
-// Simple (single mutation):
+// Simple (single mutation) — commit on success, rollback on failure:
 const { mutate } = useMutation({
   mutation: (data) => api.updateContact(data),
   onMutate: (data) => apply("contact", data.contactId, data),
-  onError: (_err, _vars, rollback) => rollback?.(),
+  onSuccess: (_data, _vars, tx) => tx?.commit(),
+  onError: (_err, _vars, tx) => tx?.rollback(),
 });
 
 // Multi-mutation transaction:

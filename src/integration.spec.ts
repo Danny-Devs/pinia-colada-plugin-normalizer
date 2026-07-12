@@ -527,7 +527,7 @@ describe("Plugin Integration", () => {
       const { apply } = useOptimisticUpdate(pinia);
 
       // Apply optimistic update
-      const rollback = apply("contact", "1", { contactId: "1", name: "Alicia" });
+      const tx = apply("contact", "1", { contactId: "1", name: "Alicia" });
 
       const entityStore = useEntityStore(pinia);
       expect(entityStore.get("contact", "1").value?.name).toBe("Alicia");
@@ -535,7 +535,7 @@ describe("Plugin Integration", () => {
       expect(entityStore.get("contact", "1").value?.email).toBe("alice@test.com");
 
       // Rollback
-      rollback();
+      tx.rollback();
       expect(entityStore.get("contact", "1").value?.name).toBe("Alice");
     });
 
@@ -551,11 +551,44 @@ describe("Plugin Integration", () => {
 
       expect(entityStore.has("contact", "99")).toBe(false);
 
-      const rollback = apply("contact", "99", { contactId: "99", name: "Optimistic" });
+      const tx = apply("contact", "99", { contactId: "99", name: "Optimistic" });
       expect(entityStore.has("contact", "99")).toBe(true);
 
-      rollback();
+      tx.rollback();
       expect(entityStore.has("contact", "99")).toBe(false);
+    });
+
+    it("apply → commit → later apply + rollback does not revert confirmed data", async () => {
+      // Regression: apply() used to return only a rollback fn, so successful
+      // mutations leaked live transactions. A later rollback then restored a
+      // pre-first-mutation snapshot and replayed the stale optimistic data,
+      // clobbering everything the server had confirmed since.
+      const { pinia } = factory(
+        async () => ({ contactId: "1", name: "Alice", email: "alice@test.com" }),
+        ["contacts", "1"],
+        { entities: { contact: defineEntity({ idField: "contactId" }) } },
+      );
+
+      await flushPromises();
+
+      const optimistic = useOptimisticUpdate(pinia);
+      const entityStore = useEntityStore(pinia);
+
+      // First mutation succeeds: optimistic apply → server confirms → commit
+      const tx1 = optimistic.apply("contact", "1", { contactId: "1", name: "Alicia" });
+      // Server response lands (normal flow writes confirmed data to the store)
+      entityStore.set("contact", "1", { contactId: "1", name: "Alicia Confirmed" });
+      tx1.commit();
+
+      // Second mutation on the same entity fails and rolls back
+      const tx2 = optimistic.apply("contact", "1", { contactId: "1", name: "Zombie" });
+      expect(entityStore.get("contact", "1").value?.name).toBe("Zombie");
+      tx2.rollback();
+
+      // Rollback must restore the CONFIRMED state, not the pre-tx1 snapshot,
+      // and must not replay tx1's stale optimistic data.
+      expect(entityStore.get("contact", "1").value?.name).toBe("Alicia Confirmed");
+      expect(entityStore.get("contact", "1").value?.email).toBe("alice@test.com");
     });
 
     it("transaction with multiple mutations commits cleanly", async () => {

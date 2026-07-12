@@ -79,7 +79,7 @@ Transaction-based with rollback. Handles concurrent mutations correctly.
 
 ### Simple (single mutation)
 
-`apply()` creates a one-shot transaction and returns a rollback function:
+`apply()` creates a one-shot transaction and returns its `{ commit, rollback }` pair. **Both paths must be settled** — `commit()` on success, `rollback()` on failure. An unsettled transaction stays active: its stale optimistic data would be replayed by every later rollback, clobbering server-confirmed fields.
 
 ```typescript
 import { useOptimisticUpdate } from "pinia-colada-plugin-normalizer";
@@ -89,7 +89,8 @@ const { apply } = useOptimisticUpdate();
 const { mutate } = useMutation({
   mutation: (data) => api.updateContact(data),
   onMutate: (data) => apply("contact", data.contactId, data),
-  onError: (_err, _vars, rollback) => rollback?.(),
+  onSuccess: (_data, _vars, tx) => tx?.commit(),
+  onError: (_err, _vars, tx) => tx?.rollback(),
 });
 ```
 

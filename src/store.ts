@@ -10,7 +10,7 @@
  * Just Vue reactivity doing what it does best.
  */
 
-import { computed, shallowRef } from "vue";
+import { computed, shallowRef, triggerRef } from "vue";
 import type { ComputedRef, ShallowRef } from "vue";
 import type { EntityEvent, EntityKey, EntityRecord, EntityRef, EntityStore } from "./types";
 import { ENTITY_REF_MARKER } from "./types";
@@ -165,6 +165,41 @@ export function createEntityStore(): EntityStore {
     }
   }
 
+  /**
+   * Shared removal path for `remove()` (semantic delete) and `evict()`
+   * (memory-only cache drop). The two differ ONLY in the emitted event type —
+   * downstream layers (persistence, sync) decide what to do with each.
+   *
+   * The handed-out ShallowRef is set to `undefined` BEFORE the map delete so
+   * live watchers (`useEntityRef`, computeds) fire, re-read through `get()`,
+   * and re-establish tracking on a fresh phantom ref — otherwise they'd
+   * render the deleted entity forever and never see a re-add.
+   */
+  function removeInternal(entityType: string, id: string, eventType: "remove" | "evict"): void {
+    const typeMap = storage.get(entityType);
+    if (!typeMap) return;
+
+    const existing = typeMap.get(id);
+    if (!existing) return;
+
+    const previousData = existing.value;
+    existing.value = undefined as unknown as EntityRecord;
+    typeMap.delete(id);
+
+    // Bump type version so getByType() recomputes
+    const version = getTypeVersion(entityType);
+    version.value++;
+
+    emit({
+      type: eventType,
+      entityType,
+      id,
+      key: toEntityKey(entityType, id),
+      data: undefined,
+      previousData,
+    });
+  }
+
   // ── EntityStore implementation ──────────────
 
   const store: EntityStore = {
@@ -271,25 +306,43 @@ export function createEntityStore(): EntityStore {
     },
 
     remove(entityType, id) {
-      const typeMap = storage.get(entityType);
-      if (!typeMap) return;
+      removeInternal(entityType, id, "remove");
+    },
 
+    evict(entityType, id) {
+      removeInternal(entityType, id, "evict");
+    },
+
+    update(entityType, id, updater) {
+      const typeMap = getTypeMap(entityType);
       const existing = typeMap.get(id);
-      if (!existing) return;
+      const previousData = existing?.value;
 
-      const previousData = existing.value;
-      typeMap.delete(id);
+      // Read + compute + write as one store operation — callers can't lose
+      // an interleaved write between their own get() and replace().
+      const data = updater(previousData);
 
-      // Bump type version so getByType() recomputes
-      const version = getTypeVersion(entityType);
-      version.value++;
+      if (existing) {
+        if (existing.value === data) return;
+        const wasPhantom = previousData === undefined;
+        existing.value = data;
+        if (wasPhantom) {
+          // Phantom ref being populated — functionally a new entity
+          const version = getTypeVersion(entityType);
+          version.value++;
+        }
+      } else {
+        typeMap.set(id, shallowRef(data));
+        const version = getTypeVersion(entityType);
+        version.value++;
+      }
 
       emit({
-        type: "remove",
+        type: "set",
         entityType,
         id,
         key: toEntityKey(entityType, id),
-        data: undefined,
+        data,
         previousData,
       });
     },
@@ -373,7 +426,7 @@ export function createEntityStore(): EntityStore {
     },
 
     gc() {
-      // Collect keys to remove first, then process — avoids mutating
+      // Collect keys to evict first, then process — avoids mutating
       // refCounts during iteration (subscribers could call retain/release).
       const toCollect: Array<{ key: EntityKey; entityType: string; id: string }> = [];
       for (const [key, count] of refCounts) {
@@ -387,22 +440,47 @@ export function createEntityStore(): EntityStore {
         }
       }
 
-      const removed: string[] = [];
+      const evicted: string[] = [];
       for (const { key, entityType, id } of toCollect) {
         refCounts.delete(key);
         if (store.has(entityType, id)) {
-          store.remove(entityType, id);
-          removed.push(key);
+          // Evict, don't remove: GC is cache trimming. A persisted copy
+          // survives and can re-hydrate; a sync layer must never see GC
+          // as deletion (ADR-004).
+          store.evict(entityType, id);
+          evicted.push(key);
         }
       }
-      return removed;
+
+      // Sweep never-populated phantom refs (created by get() misses).
+      // They have no refcount entry, so the pass above can't reach them,
+      // and nothing else ever deletes them — each visited-but-missing ID
+      // would otherwise be a permanent map entry. triggerRef() fires any
+      // live watcher, whose re-read via get() creates a fresh phantom —
+      // so actively-watched IDs keep working and idle ones are freed.
+      for (const [entityType, typeMap] of storage) {
+        for (const [id, ref] of typeMap) {
+          if (ref.value === undefined && !refCounts.has(toEntityKey(entityType, id))) {
+            typeMap.delete(id);
+            triggerRef(ref);
+          }
+        }
+      }
+
+      return evicted;
     },
 
     clear() {
       for (const [entityType, typeMap] of storage) {
+        // Emit a semantic remove per entity so every subscriber stays
+        // coherent: persistence clears durable rows, indexes and denorm
+        // caches invalidate, and live refs (set to undefined first) fire
+        // their watchers. Silent clearing left them all rendering ghosts.
+        const ids = Array.from(typeMap.keys());
+        for (const id of ids) {
+          removeInternal(entityType, id, "remove");
+        }
         typeMap.clear();
-        const version = getTypeVersion(entityType);
-        version.value++;
       }
       refCounts.clear();
       getByTypeCache.clear();

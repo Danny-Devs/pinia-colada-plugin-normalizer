@@ -262,8 +262,9 @@ export interface OptimisticTransaction {
  * const optimistic = useOptimisticUpdate()
  *
  * // Simple single-mutation (most common):
- * const rollback = optimistic.apply('contact', '1', { name: 'Alicia' })
- * // On failure: rollback()
+ * const tx = optimistic.apply('contact', '1', { name: 'Alicia' })
+ * // On success: tx.commit()   ← REQUIRED, drops the optimistic layer
+ * // On failure: tx.rollback()
  *
  * // Multi-mutation transaction:
  * const tx = optimistic.transaction()
@@ -272,11 +273,13 @@ export interface OptimisticTransaction {
  * // On success: tx.commit()
  * // On failure: tx.rollback()
  *
- * // With Pinia Colada useMutation:
+ * // With Pinia Colada useMutation — onMutate's return value arrives as
+ * // the third argument of onSuccess/onError:
  * const { mutate } = useMutation({
  *   mutation: (data) => api.updateContact(data),
  *   onMutate: (data) => optimistic.apply('contact', data.id, data),
- *   onError: (_err, _vars, rollback) => rollback?.(),
+ *   onSuccess: (_data, _vars, tx) => tx?.commit(),
+ *   onError: (_err, _vars, tx) => tx?.rollback(),
  * })
  * ```
  */
@@ -443,12 +446,23 @@ export function useOptimisticUpdate(pinia?: Pinia) {
 
   /**
    * Simple single-mutation convenience.
-   * Creates a transaction with one `set` mutation and returns a rollback function.
+   * Creates a transaction with one `set` mutation and returns its
+   * `{ commit, rollback }` pair.
+   *
+   * BOTH paths must be called: `commit()` on mutation success, `rollback()`
+   * on failure. A transaction that is never settled stays in
+   * `activeTransactions` — its stale optimistic data would be replayed by
+   * every later rollback (clobbering server-confirmed fields) and its
+   * snapshots would accumulate for the composable's lifetime.
    */
-  function apply(entityType: string, id: string, data: EntityRecord): () => void {
+  function apply(
+    entityType: string,
+    id: string,
+    data: EntityRecord,
+  ): Pick<OptimisticTransaction, "commit" | "rollback"> {
     const tx = transaction();
     tx.set(entityType, id, data);
-    return () => tx.rollback();
+    return { commit: () => tx.commit(), rollback: () => tx.rollback() };
   }
 
   return { apply, transaction };

@@ -97,6 +97,71 @@ describe("enablePersistence", () => {
       expect(store2.has("contact", "2")).toBe(false);
       p2.dispose();
     });
+
+    it("evictions (gc) do NOT delete the durable row — evicted entities re-hydrate", async () => {
+      const store1 = createEntityStore();
+      const p1 = enablePersistence(store1, { dbName: "test-db", writeDebounce: 0 });
+      await p1.ready;
+
+      store1.set("contact", "1", { id: "1", name: "Alice" });
+      await p1.flush();
+
+      // Cache trimming, not deletion
+      store1.evict("contact", "1");
+      await p1.flush();
+      expect(store1.has("contact", "1")).toBe(false);
+      p1.dispose();
+
+      // The durable copy survives eviction and hydrates next session (ADR-004)
+      const store2 = createEntityStore();
+      const p2 = enablePersistence(store2, { dbName: "test-db" });
+      await p2.ready;
+
+      expect(store2.has("contact", "1")).toBe(true);
+      expect(store2.get("contact", "1").value?.name).toBe("Alice");
+      p2.dispose();
+    });
+
+    it("store.clear() clears the durable copies too", async () => {
+      const store1 = createEntityStore();
+      const p1 = enablePersistence(store1, { dbName: "test-db", writeDebounce: 0 });
+      await p1.ready;
+
+      store1.set("contact", "1", { id: "1", name: "Alice" });
+      await p1.flush();
+
+      store1.clear();
+      await p1.flush();
+      p1.dispose();
+
+      const store2 = createEntityStore();
+      const p2 = enablePersistence(store2, { dbName: "test-db" });
+      await p2.ready;
+
+      expect(store2.has("contact", "1")).toBe(false);
+      p2.dispose();
+    });
+
+    it("writes made before the DB finishes opening are flushed once it opens", async () => {
+      const store1 = createEntityStore();
+      const p1 = enablePersistence(store1, { dbName: "test-db", writeDebounce: 0 });
+      // Write IMMEDIATELY — before awaiting ready, so the debounce timer
+      // fires against a null db and would previously strand the write
+      store1.set("contact", "early", { id: "early", name: "Before open" });
+      await p1.ready;
+
+      // Wait out the rescheduled flush (writeDebounce: 0 → next macrotask)
+      await new Promise((r) => setTimeout(r, 10));
+      p1.dispose();
+
+      const store2 = createEntityStore();
+      const p2 = enablePersistence(store2, { dbName: "test-db" });
+      await p2.ready;
+
+      expect(store2.has("contact", "early")).toBe(true);
+      expect(store2.get("contact", "early").value?.name).toBe("Before open");
+      p2.dispose();
+    });
   });
 
   // ─────────────────────────────────────────────

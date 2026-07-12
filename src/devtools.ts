@@ -450,14 +450,23 @@ export function setupDevtools(app: any, entityStore: EntityStore, queryCache?: a
         const isAdd = event.type === "set" && event.previousData == null;
         const isUpdate = event.type === "set" && event.previousData != null;
         const isRemove = event.type === "remove";
+        const isEvict = event.type === "evict";
 
         const title = isAdd
           ? `➕ ${event.entityType}:${event.id}`
           : isUpdate
             ? `✏️ ${event.entityType}:${event.id}`
-            : `🗑️ ${event.entityType}:${event.id}`;
+            : isEvict
+              ? `♻️ ${event.entityType}:${event.id}`
+              : `🗑️ ${event.entityType}:${event.id}`;
 
-        const subtitle = isAdd ? "added" : isUpdate ? "updated" : "removed";
+        const subtitle = isAdd
+          ? "added"
+          : isUpdate
+            ? "updated"
+            : isEvict
+              ? "evicted (gc — persisted copy kept)"
+              : "removed";
 
         api.addTimelineEvent({
           layerId: TIMELINE_LAYER_ID,

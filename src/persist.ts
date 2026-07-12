@@ -106,9 +106,9 @@ function idbWriteBatch(
  * Gracefully degrades if IDB is unavailable (private browsing, quota
  * exceeded, SSR). The in-memory store continues to work normally.
  *
- * **Note:** `store.clear()` does not emit subscribe events, so it won't
- * clear IDB. To fully reset persisted state, call `dispose()` and delete
- * the IDB database via `indexedDB.deleteDatabase(dbName)`.
+ * **Semantics:** `remove` events delete the durable row; `evict` events
+ * (cache GC) keep it — evicted entities re-hydrate next session (ADR-004).
+ * `store.clear()` emits a `remove` per entity, so a full reset clears IDB too.
  *
  * @example
  * ```typescript
@@ -161,7 +161,14 @@ export function enablePersistence(
       dirtySaves.set(key, encodeEntityRefs(event.data));
       dirtyDeletes.delete(key);
     } else if (event.type === "remove") {
+      // Semantic delete — the entity should cease to exist durably.
       dirtyDeletes.add(key);
+      dirtySaves.delete(key);
+    } else if (event.type === "evict") {
+      // Cache eviction (gc) — the entity leaves the memory projection but
+      // the durable row MUST survive so it can re-hydrate next session.
+      // Drop any pending save for it (the last flushed value stands), but
+      // never translate eviction into a delete (ADR-004).
       dirtySaves.delete(key);
     }
     scheduleFlush();
@@ -240,6 +247,13 @@ export function enablePersistence(
         }
       } finally {
         isHydrating = false;
+      }
+
+      // Writes that happened while the DB was still opening consumed their
+      // debounce timer against a null db and early-returned. Re-schedule so
+      // they aren't stranded until the next store event or tab-hide.
+      if (dirtySaves.size > 0 || dirtyDeletes.size > 0) {
+        scheduleFlush();
       }
 
       onReady?.();

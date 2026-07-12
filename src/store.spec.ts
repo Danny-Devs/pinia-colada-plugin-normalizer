@@ -475,4 +475,162 @@ describe("EntityStore (in-memory)", () => {
       expect(customerRef.id).toBe("42");
     });
   });
+
+  describe("live ref invalidation on remove/clear", () => {
+    it("remove() clears handed-out refs so watchers see the deletion", () => {
+      const store = createEntityStore();
+      store.set("contact", "1", { id: "1", name: "Alice" });
+
+      const ref = store.get("contact", "1");
+      expect(ref.value?.name).toBe("Alice");
+
+      store.remove("contact", "1");
+      // Regression: the ref used to keep its stale value forever
+      expect(ref.value).toBeUndefined();
+    });
+
+    it("computed over get() sees remove AND a later re-add", async () => {
+      const { computed, nextTick } = await import("vue");
+      const store = createEntityStore();
+      store.set("contact", "1", { id: "1", name: "Alice" });
+
+      // Same shape as useEntityRef: re-reads through get() each evaluation
+      const view = computed(() => store.get("contact", "1").value);
+      expect(view.value?.name).toBe("Alice");
+
+      store.remove("contact", "1");
+      await nextTick();
+      expect(view.value).toBeUndefined();
+
+      // Re-add creates a fresh ref — the computed must track it (it
+      // re-evaluated on removal and picked up the new phantom ref)
+      store.set("contact", "1", { id: "1", name: "Alice v2" });
+      await nextTick();
+      expect(view.value?.name).toBe("Alice v2");
+    });
+
+    it("clear() empties handed-out refs and emits a remove event per entity", () => {
+      const store = createEntityStore();
+      store.set("contact", "1", { id: "1", name: "Alice" });
+      store.set("order", "5", { id: "5", total: 100 });
+      const ref = store.get("contact", "1");
+
+      const events: string[] = [];
+      store.subscribe((e) => events.push(`${e.type}:${e.key}`));
+
+      store.clear();
+
+      expect(ref.value).toBeUndefined();
+      expect(events).toContain("remove:contact:1");
+      expect(events).toContain("remove:order:5");
+      expect(store.has("contact", "1")).toBe(false);
+      expect(store.getByType("contact").value).toEqual([]);
+    });
+  });
+
+  describe("evict vs remove", () => {
+    it("evict() emits an 'evict' event, remove() emits 'remove'", () => {
+      const store = createEntityStore();
+      store.set("contact", "1", { id: "1", name: "Alice" });
+      store.set("contact", "2", { id: "2", name: "Bob" });
+
+      const events: Array<{ type: string; key: string }> = [];
+      store.subscribe((e) => events.push({ type: e.type, key: e.key }));
+
+      store.evict("contact", "1");
+      store.remove("contact", "2");
+
+      expect(events).toEqual([
+        { type: "evict", key: "contact:1" },
+        { type: "remove", key: "contact:2" },
+      ]);
+      // Both leave the memory projection either way
+      expect(store.has("contact", "1")).toBe(false);
+      expect(store.has("contact", "2")).toBe(false);
+    });
+
+    it("gc() evicts (never removes) zero-refcount entities", () => {
+      const store = createEntityStore();
+      store.set("contact", "1", { id: "1", name: "Alice" });
+      store.retain("contact", "1");
+      store.release("contact", "1");
+
+      const events: string[] = [];
+      store.subscribe((e) => events.push(e.type));
+
+      const evicted = store.gc();
+      expect(evicted).toEqual(["contact:1"]);
+      expect(events).toEqual(["evict"]);
+    });
+  });
+
+  describe("update (atomic read-modify-write)", () => {
+    it("passes the current value to the updater and stores with replace semantics", () => {
+      const store = createEntityStore();
+      store.set("contact", "1", { id: "1", name: "Alice", email: "a@test.com" });
+
+      store.update("contact", "1", (existing) => ({
+        id: "1",
+        name: `${(existing as any).name} Updated`,
+      }));
+
+      const value = store.get("contact", "1").value!;
+      expect(value.name).toBe("Alice Updated");
+      // Replace semantics: fields not returned by the updater are gone
+      expect(value.email).toBeUndefined();
+    });
+
+    it("updater receives undefined for a missing entity and creates it", () => {
+      const store = createEntityStore();
+      let received: unknown = "sentinel";
+      store.update("contact", "9", (existing) => {
+        received = existing;
+        return { id: "9", name: "Fresh" };
+      });
+      expect(received).toBeUndefined();
+      expect(store.get("contact", "9").value?.name).toBe("Fresh");
+      // Created entity is visible in type-level views (version bumped)
+      expect(store.getByType("contact").value).toHaveLength(1);
+    });
+  });
+
+  describe("gc phantom sweep", () => {
+    it("sweeps never-populated phantom refs that nothing watches", () => {
+      const store = createEntityStore();
+      // A get() miss creates a phantom ref (subscribe-before-data support)
+      store.get("contact", "ghost");
+      expect(store.has("contact", "ghost")).toBe(false);
+
+      store.gc();
+
+      // Populating after the sweep behaves like a brand-new entity
+      store.set("contact", "ghost", { id: "ghost", name: "Now real" });
+      expect(store.get("contact", "ghost").value?.name).toBe("Now real");
+    });
+
+    it("live watchers of swept phantoms re-establish tracking", async () => {
+      const { computed, nextTick } = await import("vue");
+      const store = createEntityStore();
+
+      const view = computed(() => store.get("contact", "future").value);
+      expect(view.value).toBeUndefined();
+
+      store.gc(); // sweeps the phantom, triggerRef fires the watcher
+
+      await nextTick();
+      // The computed re-ran, created a fresh phantom, and tracks it —
+      // so a later arrival is still observed
+      store.set("contact", "future", { id: "future", name: "Arrived" });
+      await nextTick();
+      expect(view.value?.name).toBe("Arrived");
+    });
+
+    it("does not sweep refcounted keys", () => {
+      const store = createEntityStore();
+      store.set("contact", "1", { id: "1", name: "Alice" });
+      store.retain("contact", "1");
+      store.gc();
+      expect(store.get("contact", "1").value?.name).toBe("Alice");
+    });
+  });
 });
