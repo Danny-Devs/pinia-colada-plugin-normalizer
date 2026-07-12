@@ -12,6 +12,7 @@
 
 ### Compatibility
 - **Pinia 3** — 171 tests pass on both Pinia 2.3.1 and 3.0.4. Peer dep tightened to `^2.2.6 || ^3.0.0`.
+- **@pinia/colada 1.3.1** — verified 2026-07-11: 171 tests, typecheck, build, and playground boot all green against 1.3.1 (dev dep and playground bumped from 1.1.0; no source changes required). Upstream 1.1→1.3 has no breaking changes — plugin API (`extend` hook, `entry.state` customRef, Symbol ext keys) untouched.
 
 ### Docs
 - Pagination helpers section added to API reference (was missing all 3 helpers + types).

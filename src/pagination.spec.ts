@@ -18,7 +18,7 @@ import {
   defineEntity,
 } from "./index";
 import { cursorPagination, offsetPagination, relayPagination } from "./pagination";
-import type { RelayConnection, RelayPageInfo } from "./pagination";
+import type { RelayPageInfo } from "./pagination";
 import type { EntityRecord } from "./types";
 
 // ─────────────────────────────────────────────
