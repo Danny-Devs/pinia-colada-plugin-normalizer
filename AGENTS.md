@@ -7,7 +7,7 @@ A normalized entity caching plugin for Pinia Colada (Vue's data-fetching library
 ## Architecture
 
 - `src/types.ts` — EntityStore interface (swappable contract), defineEntity, module augmentation
-- `src/store.ts` — In-memory EntityStore implementation (ShallowRef per entity, reactive Map, GC via retain/release)
+- `src/store.ts` — In-memory EntityStore implementation (ShallowRef per entity, reactive Map, GC via retain/release; `evict` = memory-only drop vs `remove` = semantic delete per ADR-004; atomic `update()` for merge recipes)
 - `src/plugin.ts` — Pinia Colada plugin (customRef replacement of `entry.state`), normalize/denormalize engines, useEntityStore composable (SSR-safe via defineStore)
 - `src/composables.ts` — Real-time composables (WS hooks, optimistic updates, coalescer, entity queries, indexes)
 - `src/persist.ts` — IndexedDB persistence (dirty-set tracking, debounced batch writes, fresh-wins hydration)
@@ -44,7 +44,7 @@ pnpm test        # run tests once
 pnpm test:watch  # watch mode
 ```
 
-157 tests across 6 test files covering:
+185 tests across 6 test files covering:
 
 - Normalize/denormalize engine (24 tests)
 - EntityStore + GC (38 tests)
