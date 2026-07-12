@@ -8,6 +8,7 @@ import ContactDetailRaw from "./components/ContactDetailRaw.vue";
 import DataInspector from "./components/DataInspector.vue";
 import FeaturesPage from "./components/FeaturesPage.vue";
 import StressTestPage from "./components/StressTestPage.vue";
+import SqlitePage from "./components/SqlitePage.vue";
 import { useDemo } from "./composables/useDemo";
 
 const currentPage = ref("demo");
@@ -160,6 +161,9 @@ function activateDiana() {
 
     <!-- Stress test page -->
     <StressTestPage v-else-if="currentPage === 'stress'" />
+
+    <!-- SQLite / OPFS persistence page -->
+    <SqlitePage v-else-if="currentPage === 'sqlite'" />
   </div>
 </template>
 

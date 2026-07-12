@@ -1,7 +1,7 @@
 import { defineConfig } from "tsdown";
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  entry: ["src/index.ts", "src/sqlite-worker.ts"],
   format: ["esm"],
   sourcemap: true,
   dts: {
@@ -9,7 +9,17 @@ export default defineConfig({
   },
   deps: {
     onlyBundle: [],
-    neverBundle: ["vue", "pinia", "@pinia/colada", "@vue/devtools-api", "@vue/reactivity", "@vue/shared"],
+    neverBundle: [
+      "vue",
+      "pinia",
+      "@pinia/colada",
+      "@vue/devtools-api",
+      "@vue/reactivity",
+      "@vue/shared",
+      // Optional peer — resolved by the APP's bundler inside its worker;
+      // bundling it here would break its .wasm asset resolution.
+      "@sqlite.org/sqlite-wasm",
+    ],
   },
   target: "esnext",
   clean: true,

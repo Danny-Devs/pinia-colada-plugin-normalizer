@@ -305,6 +305,55 @@ export interface EntityStore {
 }
 
 // ─────────────────────────────────────────────
+// Storage Engine (durability substrate contract)
+// ─────────────────────────────────────────────
+
+/**
+ * A durable storage engine that sits UNDERNEATH the in-memory read
+ * projection (ADR-003). Engines never serve reads at runtime — the memory
+ * store does. An engine's whole job is boot hydration (`loadAll`) and
+ * write-behind durability (`writeBatch`).
+ *
+ * Implementations: `idbEngine` (IndexedDB, default), `sqliteEngine`
+ * (SQLite-WASM over OPFS in a worker), `memoryEngine` (tests/SSR).
+ *
+ * Contract rules:
+ * - `writeBatch` must apply puts and deletes atomically where the backend
+ *   supports transactions, and MUST reject on failure — the persistence
+ *   coordinator treats a rejected write as "engine degraded" and disables
+ *   itself (the in-memory store keeps working).
+ * - `loadAll` may include a per-row `version` (engine write counter,
+ *   server timestamp) — the ADR-005 causality slot. Optional.
+ * - Values passed to `writeBatch` are already JSON-safe (EntityRefs are
+ *   encoded by the coordinator); engines store and return them opaquely.
+ */
+export interface StorageEngine {
+  /**
+   * Synchronous environment check. Returning false makes
+   * `enablePersistence` a silent no-op (e.g., SSR) — no warning, no error.
+   */
+  isSupported(): boolean;
+
+  /** Open the underlying database. Called once, before any other method. */
+  open(): Promise<void>;
+
+  /** Load every persisted entity for boot hydration. */
+  loadAll(): Promise<Array<{ key: EntityKey; data: unknown; version?: number }>>;
+
+  /**
+   * Apply puts and deletes as one batch (atomic where supported).
+   * MUST reject on failure so the coordinator can degrade gracefully.
+   */
+  writeBatch(
+    puts: Array<{ key: EntityKey; value: unknown }>,
+    deletes: EntityKey[],
+  ): Promise<void>;
+
+  /** Release handles/workers. No calls after close. */
+  close(): void;
+}
+
+// ─────────────────────────────────────────────
 // Entity Definition (the escape hatch)
 // ─────────────────────────────────────────────
 

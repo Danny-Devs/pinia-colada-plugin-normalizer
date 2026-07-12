@@ -1,6 +1,8 @@
 # Persistence
 
-Save your entity cache to IndexedDB so it survives page refreshes. On the next visit, entities are restored instantly — no server round-trip needed.
+Save your entity cache so it survives page refreshes. On the next visit, entities are restored instantly — no server round-trip needed.
+
+Persistence is **engine-based** (ADR-003): the in-memory store stays the synchronous source of truth for reads, and a swappable `StorageEngine` sits underneath as a write-behind durability substrate. Two engines ship built-in — **IndexedDB** (default, zero setup) and **SQLite over OPFS** (a real database file in the browser) — plus an in-memory engine for tests.
 
 ## Setup
 
@@ -48,7 +50,11 @@ ready resolves
 
 ```typescript
 enablePersistence(entityStore, {
-  // IndexedDB database name (default: 'pcn_entities')
+  // Storage engine (default: idbEngine({ dbName }) — IndexedDB)
+  engine: sqliteEngine({ worker: () => new Worker(new URL('./sqlite.worker.ts', import.meta.url), { type: 'module' }) }),
+
+  // IndexedDB database name — convenience for the default engine
+  // (ignored when `engine` is provided; configure the engine directly)
   dbName: 'my-app-entities',
 
   // Debounce interval for write batching (default: 100ms)
@@ -64,7 +70,8 @@ enablePersistence(entityStore, {
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `dbName` | `string` | `'pcn_entities'` | IndexedDB database name |
+| `engine` | `StorageEngine` | `idbEngine({ dbName })` | Durability substrate: `idbEngine`, `sqliteEngine`, `memoryEngine`, or your own |
+| `dbName` | `string` | `'pcn_entities'` | Database name for the **default** engine |
 | `writeDebounce` | `number` | `100` | Debounce interval (ms) for batching writes |
 | `onReady` | `() => void` | — | Called when hydration from IDB completes |
 | `onError` | `(error) => void` | — | Called when persistence degrades (quota, private browsing) |
@@ -122,8 +129,54 @@ function logout() {
 | **Tab close before flush** | `visibilitychange` + `beforeunload` both attempt to flush pending writes. Neither is 100% reliable on mobile, but together they cover most cases. |
 | **SSR** | `typeof indexedDB` check returns the no-op handle immediately. No IDB access on the server. |
 | **Another tab upgrades the DB** | The `versionchange` event closes the connection gracefully, disabling persistence for this tab without blocking the other tab. |
-| **`store.clear()`** | Does not emit subscribe events, so IDB is not cleared. Use `dispose()` + `indexedDB.deleteDatabase()` for a full reset. |
+| **`store.clear()`** | Emits a `remove` event per entity (since 0.2.0), so the durable copies are cleared too — a full reset in one call. |
+| **Cache GC (`store.gc()`)** | Emits `evict` events: entities leave memory but the durable rows **survive** and re-hydrate next session (ADR-004). Only `remove`/`clear` delete durable data. |
+
+## Storage Engines
+
+### `idbEngine(options?)` — default
+
+Raw IndexedDB, zero setup, zero dependencies. What you get when you call `enablePersistence(store)` with no engine.
+
+### `sqliteEngine(options)` — SQLite over OPFS
+
+A real SQLite database file in the browser, persisted on the Origin Private File System via the `opfs-sahpool` VFS (the fastest OPFS option — and it needs **no COOP/COEP headers**, so it works on any hosting). SQLite-WASM must run in a Worker, and **your app creates the worker file** so your bundler can resolve `@sqlite.org/sqlite-wasm` and its `.wasm` asset:
+
+```bash
+npm install @sqlite.org/sqlite-wasm   # optional peer dependency
+```
+
+```typescript
+// src/sqlite.worker.ts — the whole file
+import { runSqliteWorker } from 'pinia-colada-plugin-normalizer/sqlite-worker'
+runSqliteWorker()
+```
+
+```typescript
+import { enablePersistence, sqliteEngine } from 'pinia-colada-plugin-normalizer'
+
+const { ready } = enablePersistence(entityStore, {
+  engine: sqliteEngine({
+    dbName: 'app.sqlite3', // OPFS file name
+    worker: () => new Worker(new URL('./sqlite.worker.ts', import.meta.url), { type: 'module' }),
+  }),
+})
+```
+
+Vite users: add `optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm'] }` to `vite.config.ts` (per sqlite-wasm's own guidance).
+
+If OPFS is unavailable (insecure context, old browser), the engine falls back to a transient in-memory database and reports it via `engine.persistent === false` plus a dev-mode warning — your app keeps working, just without durability.
+
+Every row carries a `row_version` counter that increments on write — the causality hook that version-aware sync builds on later (ADR-005).
+
+### `memoryEngine()` — tests & SSR
+
+Implements the contract with all I/O removed. `snapshot()` exposes engine contents for assertions. Also the reference implementation to read before writing a custom engine.
+
+### Write your own
+
+Implement the four-method `StorageEngine` interface (`open`, `loadAll`, `writeBatch`, `close`, plus an `isSupported` guard) and pass it as `engine`. The coordinator handles change detection, debouncing, evict-vs-remove semantics, EntityRef encoding, and graceful degradation — an engine only stores and retrieves opaque rows.
 
 ## Zero Dependencies
 
-The persistence layer uses the raw IndexedDB API — no `idb`, no Dexie, no runtime dependencies added. The entire implementation is ~150 lines.
+The default persistence path uses the raw IndexedDB API — no `idb`, no Dexie, no runtime dependencies added. The SQLite engine's `@sqlite.org/sqlite-wasm` is an **optional** peer dependency: apps that never use `sqliteEngine` never install or ship it.

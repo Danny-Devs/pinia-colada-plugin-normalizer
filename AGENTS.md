@@ -10,7 +10,8 @@ A normalized entity caching plugin for Pinia Colada (Vue's data-fetching library
 - `src/store.ts` — In-memory EntityStore implementation (ShallowRef per entity, reactive Map, GC via retain/release; `evict` = memory-only drop vs `remove` = semantic delete per ADR-004; atomic `update()` for merge recipes)
 - `src/plugin.ts` — Pinia Colada plugin (customRef replacement of `entry.state`), normalize/denormalize engines, useEntityStore composable (SSR-safe via defineStore)
 - `src/composables.ts` — Real-time composables (WS hooks, optimistic updates, coalescer, entity queries, indexes)
-- `src/persist.ts` — IndexedDB persistence (dirty-set tracking, debounced batch writes, fresh-wins hydration)
+- `src/persist.ts` — persistence coordinator (engine-agnostic: dirty-set tracking, debounced batch writes, fresh-wins hydration, evict-vs-remove routing per ADR-004)
+- `src/engines/` — StorageEngine implementations: `idb.ts` (default), `memory.ts` (tests/reference), `sqlite.ts` + `sqlite-core.ts` (SQLite-WASM/OPFS, RPC to worker); `src/sqlite-worker.ts` = worker entry exported as `./sqlite-worker` (bring-your-own-worker; SQL lives in sqlite-core for Node testability)
 - `src/pagination.ts` — Pagination helpers (cursor, offset) for useInfiniteQuery merge recipes
 - `src/index.ts` — Public API barrel export
 
@@ -44,7 +45,7 @@ pnpm test        # run tests once
 pnpm test:watch  # watch mode
 ```
 
-185 tests across 6 test files covering:
+197 tests across 7 test files covering:
 
 - Normalize/denormalize engine (24 tests)
 - EntityStore + GC (38 tests)

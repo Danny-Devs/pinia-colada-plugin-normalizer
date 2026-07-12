@@ -39,6 +39,12 @@ function toggleTheme() {
           href="#"
           >Stress Test</a
         >
+        <a
+          :class="['nav-link', { active: currentPage === 'sqlite' }]"
+          @click.prevent="emit('navigate', 'sqlite')"
+          href="#"
+          >SQLite</a
+        >
       </nav>
     </div>
     <div class="header-right">

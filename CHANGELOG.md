@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0 (unreleased)
+
+Phase-4 Stage 1: the SQLite durability engine (ADR-003 implemented).
+
+### Features
+- **`StorageEngine` interface** — persistence is now engine-based. The coordinator (`enablePersistence`) owns change detection, debouncing, evict-vs-remove semantics, EntityRef encoding, and graceful degradation; engines only store rows. `enablePersistence(store, { engine })` — fully backward-compatible (default remains IndexedDB).
+- **`sqliteEngine()`** — SQLite-WASM persisted on OPFS (`opfs-sahpool` VFS: fastest, no COOP/COEP). Bring-your-own-worker pattern (`pinia-colada-plugin-normalizer/sqlite-worker` export) so the app's bundler resolves `@sqlite.org/sqlite-wasm` (new **optional** peer dep) and its wasm asset. Graceful fallback to a transient in-memory DB when OPFS is unavailable (`engine.persistent` reports which). Rows carry an incrementing `row_version` — the ADR-005 causality hook, live from day one.
+- **`idbEngine()`** — the previous IndexedDB internals, extracted and exported.
+- **`memoryEngine()`** — contract reference implementation for tests/SSR, with a `snapshot()` assertion hook.
+- **Playground: SQLite page** — kill-the-tab demo; verified in a real browser: write→survives reload, evict→row survives, delete→row gone (ADR-004 observed end-to-end on real OPFS).
+- **CI: trusted-publishing release workflow** — pushing a `v*` tag runs gates and publishes via npm OIDC (no tokens; requires the one-time trusted-publisher registration on npmjs.com).
+
+### Tests
+- StorageEngine contract suite (runs against every engine), coordinator×engine integration (incl. ADR-004 evict-vs-remove at the engine boundary), and the SQLite SQL core exercised against **real sqlite-wasm** (`:memory:`) in Node — schema idempotency, JSON round-trip, `row_version` bookkeeping, batch-transaction atomicity. 197 tests total (was 185).
+
+### Docs
+- persistence.md: Storage Engines section (sqlite worker setup, custom-engine guide); fixed stale `store.clear()` edge-case row (0.2.0 behavior).
+
 ## 0.2.0 (2026-07-12)
 
 Audit-driven release (see `../AUDIT-2026-07-11.md`): two HIGH bug fixes and the three architectural decisions (ADR-003/004/005) that unblock Phase 4 (local-first).

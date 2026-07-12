@@ -38,9 +38,18 @@ export { useEntityRef, useEntityQuery, createEntityIndex } from "./composables";
 // Composables (Phase 4: Cache Redirects)
 export { useCachedEntity } from "./composables";
 
-// Persistence (Phase 4: IndexedDB)
+// Persistence (Phase 4: write-behind durability — ADR-003)
 export { enablePersistence } from "./persist";
 export type { PersistenceOptions, PersistenceHandle } from "./persist";
+
+// Storage engines (swappable durability substrates)
+export { idbEngine } from "./engines/idb";
+export type { IdbEngineOptions } from "./engines/idb";
+export { memoryEngine } from "./engines/memory";
+export type { MemoryEngine } from "./engines/memory";
+export { sqliteEngine } from "./engines/sqlite";
+export type { SqliteEngine, SqliteEngineOptions } from "./engines/sqlite";
+// (worker side: import { runSqliteWorker } from 'pinia-colada-plugin-normalizer/sqlite-worker')
 
 // Pagination Helpers
 export { cursorPagination, offsetPagination, relayPagination } from "./pagination";
@@ -57,6 +66,7 @@ export type {
 export { defineEntity } from "./types";
 export type {
   EntityStore,
+  StorageEngine,
   EntityRecord,
   EntityKey,
   EntityEvent,
