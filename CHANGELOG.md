@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 (unreleased)
+## 0.3.0 (2026-07-12)
 
 Phase-4 Stage 1: the SQLite durability engine (ADR-003 implemented).
 
