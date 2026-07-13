@@ -594,6 +594,38 @@ describe("EntityStore (in-memory)", () => {
     });
   });
 
+  describe("referential stability (the value prop — Dexie 4 broke this, issues #2034/#2058)", () => {
+    it("untouched entity refs stay === across unrelated writes", () => {
+      const store = createEntityStore();
+      store.set("contact", "1", { id: "1", name: "Alice" });
+      const before = store.get("contact", "1").value;
+
+      store.set("contact", "2", { id: "2", name: "Bob" });
+      store.set("order", "9", { id: "9", total: 50 });
+      store.replace("contact", "2", { id: "2", name: "Bobby" });
+
+      expect(store.get("contact", "1").value).toBe(before);
+    });
+
+    it("getByType keeps identity of unchanged items when the array recomputes", () => {
+      const store = createEntityStore();
+      store.set("contact", "1", { id: "1", name: "Alice" });
+      const alice = store.get("contact", "1").value;
+
+      store.set("contact", "2", { id: "2", name: "Bob" }); // membership change → array recomputes
+      const list = store.getByType("contact").value;
+      expect(list.find((c) => c.id === "1")).toBe(alice);
+    });
+
+    it("no-op merges preserve identity (same data re-set)", () => {
+      const store = createEntityStore();
+      store.set("contact", "1", { id: "1", name: "Alice" });
+      const before = store.get("contact", "1").value;
+      store.set("contact", "1", { id: "1", name: "Alice" }); // identical fields
+      expect(store.get("contact", "1").value).toBe(before);
+    });
+  });
+
   describe("gc phantom sweep", () => {
     it("sweeps never-populated phantom refs that nothing watches", () => {
       const store = createEntityStore();
